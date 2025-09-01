@@ -3,23 +3,23 @@
 This module constructs a rotated memory surface-code circuit using Stim and
 provides a method ``apply_paper_aligned_noise`` that instruments the circuit
 with the detailed error mechanisms described in Google's "quantum error
-correction below the surface code threshold" paper.  All physical channels are
-twirled into generalized Pauli channels before being applied to the circuit.
+correction below the surface code threshold" paper.  Each mechanism is modelled
+via Kraus operators and converted to a generalized Pauli channel using the
+generalized Pauli twirling approximation (GPTA) before being appended to the
+Stim circuit.
 
 The implementation supports the parameters defined in
 ``configs/paper_aligned.yaml``.  Key mappings are:
 
-* ``T1_us`` / ``Tphi_us`` – single qubit amplitude/phase damping folded through
-  GPT and injected after 1Q gates.
+* ``T1_us`` / ``Tphi_us`` – single qubit amplitude/phase damping combined with
+  passive heating and twirled to a Pauli+ channel applied after 1Q gates.
 * ``p_cz_crosstalk_ZZ`` – correlated ZZ after parallel CZ windows.
 * ``p_cz_swap_like`` – swap‑like correlated errors modelled as (XX+YY)/2.
-* ``p_cz_leak_11_to_02`` – dephasing‑induced leakage approximated as a
-  correlated ZZ error.
-* ``p_leak_transport_12_to_30`` – leakage transport modelled as additional
-  single‑qubit Pauli noise on CZ participants.
-* ``p_readout`` / ``p_reset`` – classical flip errors on measurement/reset.
-* ``p_heat`` and ``dqlr_matrix`` – passive heating and imperfect DQLR are
-  approximated as extra single‑qubit Pauli noise.
+* ``p_cz_leak_11_to_02`` – Kraus model of dephasing‑induced leakage twirled to
+  a Pauli channel.
+* ``p_leak_transport_12_to_30`` – leakage transport channel applied during CZs.
+* ``p_readout`` / ``p_reset`` – classical flips preceding measurement/reset.
+* ``dqlr_matrix`` – imperfect DQLR reset modelled with Kraus operators.
 * ``p_1q_excess``, ``p_cz_excess`` and ``p_idle_excess`` – residual Pauli noise
   around gates and idles.
 
@@ -33,7 +33,15 @@ from typing import Dict, List, Tuple
 
 import stim
 
-from google_qec_paper_noise_model.gpt import gpt_single_qubit, amp_phase_kraus
+from google_qec_paper_noise_model.gpta import twirl_to_pauli_channel
+from google_qec_paper_noise_model.gpt import amp_phase_kraus
+from google_qec_paper_noise_model.channels import (
+    lift_qubit_to_qutrit,
+    passive_heating_kraus,
+    dqlr_kraus,
+    leakage_injection_kraus,
+)
+from google_qec_paper_noise_model.kraus_utils import combine_kraus_channels
 
 
 ONE_Q_GATES = {
@@ -145,9 +153,6 @@ class PauliPlusSimulator:
         dqlr_matrix: List[List[float]] = cfg.get(
             "dqlr_matrix", ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
         )
-        # Imperfect DQLR is approximated as a classical flip with probability of
-        # leaving the computational subspace.
-        p_dqlr = float(dqlr_matrix[0][2] + dqlr_matrix[1][2])
 
         p_1q_excess = float(cfg.get("p_1q_excess", 0.0))
         p_idle_excess = float(cfg.get("p_idle_excess", 0.0))
@@ -160,15 +165,40 @@ class PauliPlusSimulator:
         twirl_idles_each_tick = bool(cfg.get("twirl_idles_each_tick", False))
         twirl_after_1q_gates = bool(cfg.get("twirl_after_1q_gates", True))
 
-        # GPT-twirled 1Q channel from amplitude+phase damping over one cycle.
-        p1 = gpt_single_qubit(
-            amp_phase_kraus(dt_us=dt_us, T1_us=T1_us, Tphi_us=Tphi_us)
+        # Build single-qubit idle channel via Kraus ops and GPTA.
+        K_amp = amp_phase_kraus(dt_us=dt_us, T1_us=T1_us, Tphi_us=Tphi_us)
+        K = lift_qubit_to_qutrit(K_amp)
+        if p_heat > 0:
+            K = combine_kraus_channels(K, passive_heating_kraus(p_heat))
+        idle_probs, _ = twirl_to_pauli_channel(K, 1)
+        px, py, pz = float(idle_probs[1]), float(idle_probs[2]), float(idle_probs[3])
+        # Fold excess single-qubit errors evenly into XYZ.
+        px += p_1q_excess / 3.0
+        py += p_1q_excess / 3.0
+        pz += p_1q_excess / 3.0
+
+        # DQLR reset imperfections via Kraus operators.
+        dqlr_probs, _ = twirl_to_pauli_channel(dqlr_kraus(dqlr_matrix), 1)
+        dqlr_px, dqlr_py, dqlr_pz = (
+            float(dqlr_probs[1]),
+            float(dqlr_probs[2]),
+            float(dqlr_probs[3]),
         )
-        px, py, pz = p1.get("X", 0.0), p1.get("Y", 0.0), p1.get("Z", 0.0)
-        # Fold excess errors, passive heating, etc. evenly into XYZ.
-        px += (p_1q_excess + p_heat) / 3.0
-        py += (p_1q_excess + p_heat) / 3.0
-        pz += (p_1q_excess + p_heat) / 3.0
+
+        # CZ leakage and transport channels approximated via single-qubit twirls.
+        cz_px = cz_py = cz_pz = 0.0
+        if p_cz_leak > 0:
+            leak_probs, _ = twirl_to_pauli_channel(
+                leakage_injection_kraus(p_cz_leak / 2.0), 1
+            )
+            cz_px += float(leak_probs[1])
+            cz_py += float(leak_probs[2])
+            cz_pz += float(leak_probs[3])
+        if p_leak_transport > 0:
+            s = p_leak_transport / 3.0
+            cz_px += s
+            cz_py += s
+            cz_pz += s
 
         new_circuit = stim.Circuit()
         current_cz_pairs: List[Tuple[int, int]] = []
@@ -197,16 +227,9 @@ class PauliPlusSimulator:
                     [stim.target_y(a), stim.target_y(b)],
                     0.5 * p_cz_swap,
                 )
-            if p_cz_leak > 0:
-                new_circuit.append_operation(
-                    "CORRELATED_ERROR",
-                    [stim.target_z(a), stim.target_z(b)],
-                    p_cz_leak,
-                )
-            if p_leak_transport > 0:
-                s = p_leak_transport / 3.0
-                add_pauli_ch1(a, s, s, s)
-                add_pauli_ch1(b, s, s, s)
+            if cz_px > 0 or cz_py > 0 or cz_pz > 0:
+                add_pauli_ch1(a, cz_px, cz_py, cz_pz)
+                add_pauli_ch1(b, cz_px, cz_py, cz_pz)
             if p_cz_excess > 0:
                 s = p_cz_excess / 3.0
                 add_pauli_ch1(a, s, s, s)
@@ -232,8 +255,7 @@ class PauliPlusSimulator:
                         continue
                     if p_reset > 0:
                         new_circuit.append_operation("X_ERROR", [t], [p_reset])
-                    if p_dqlr > 0:
-                        new_circuit.append_operation("X_ERROR", [t], [p_dqlr])
+                    add_pauli_ch1(t.value, dqlr_px, dqlr_py, dqlr_pz)
                 continue
 
             if name in ONE_Q_GATES:

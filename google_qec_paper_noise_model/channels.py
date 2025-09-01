@@ -112,22 +112,78 @@ def cz_induced_leakage_kraus(p_leak: float) -> List[np.ndarray]:
     return [K0, K1, K2]
 
 def leakage_transport_kraus(p_move: float) -> List[np.ndarray]:
+    """Simplified leakage transport channel.
+
+    The Supplementary Information of the paper describes a stochastic process
+    that moves population from ``|12>`` to ``|30>`` (and ``|21>`` to ``|03>``)
+    during a faulty CZ.  Our simulator only models up to the ``|2>`` level, so
+    we approximate this transport as a swap of leakage between the two qubits.
+
+    With probability ``p_move/2`` the state ``|12>`` becomes ``|21>`` and with
+    the same probability ``|21>`` becomes ``|12>``.  The remainder of the time
+    the channel acts as identity.  This captures the stochastic transport of
+    leakage between qubits while keeping the model within a two-qutrit space.
     """
-    Two-qutrit 'transport' where leakage on one qubit propagates during CZ
-    (e.g., |12> <-> |30> like effects in multi-level systems).
-    Simplified as a swap-like stochastic move from |12>/<21> to |30>/<03>.
-    """
+
     p = float(p_move)
     dim = 9
     I9 = np.eye(dim, dtype=complex)
-    K0 = np.sqrt(1.0 - p) * I9
-    K1 = np.zeros((dim,dim), complex)
-    # |12> -> |30>
-    K1[3*3//3 + 0, 3*1 + 2] = np.sqrt(p/2.0)  # idx 6->? keep formula simple
-    # |21> -> |03>
-    K1[3*0 + 3//1, 3*2 + 1] = K1[0,0]  # dummy to ensure shape; kept for extensibility
-    # NOTE: Simplified; downstream GPTA will twirl this anyway.
-    return [K0]  # keep conservative (transport folded into K0 phenomenologically)
+
+    # Identity branch with reduced amplitudes on the affected states.
+    K0 = I9.copy()
+    idx12 = 3 * 1 + 2
+    idx21 = 3 * 2 + 1
+    K0[idx12, idx12] = np.sqrt(max(0.0, 1.0 - p / 2.0))
+    K0[idx21, idx21] = np.sqrt(max(0.0, 1.0 - p / 2.0))
+
+    # Swapped branches |12><21| and |21><12|
+    K1 = np.zeros((dim, dim), complex)
+    K2 = np.zeros((dim, dim), complex)
+    K1[idx12, idx21] = np.sqrt(p / 2.0)
+    K2[idx21, idx12] = np.sqrt(p / 2.0)
+
+    return [K0, K1, K2]
+
+
+def passive_heating_kraus(p_heat: float) -> List[np.ndarray]:
+    """Single-qutrit passive heating into ``|2>``.
+
+    Each basis state ``|0>`` or ``|1>`` moves to the leaked level ``|2>`` with
+    probability ``p_heat``.  ``|2>`` remains ``|2>``.  The channel is trace
+    preserving and acts as identity when ``p_heat=0``.
+    """
+
+    p = float(p_heat)
+    I3 = np.eye(3, dtype=complex)
+    K0 = np.sqrt(1.0 - p) * I3
+    K1 = np.zeros((3, 3), complex)
+    K2 = np.zeros((3, 3), complex)
+    # |2><0| and |2><1|
+    K1[2, 0] = np.sqrt(p)
+    K2[2, 1] = np.sqrt(p)
+    return [K0, K1, K2]
+
+
+def dqlr_kraus(p_matrix: List[List[float]]) -> List[np.ndarray]:
+    """Kraus operators for an imperfect DQLR reset channel.
+
+    ``p_matrix`` is a 3x3 matrix where element ``p_matrix[i][j]`` gives the
+    probability of resetting from state ``|j>`` to ``|i>``.  The resulting Kraus
+    operators satisfy ``sum_i K_i† K_i = I`` provided each column of
+    ``p_matrix`` sums to 1.
+    """
+
+    P = np.array(p_matrix, dtype=float)
+    Ks: List[np.ndarray] = []
+    for i in range(3):
+        for j in range(3):
+            amp = np.sqrt(max(P[i, j], 0.0))
+            if amp == 0:
+                continue
+            K = np.zeros((3, 3), complex)
+            K[i, j] = amp
+            Ks.append(K)
+    return Ks
 
 def spectator_crosstalk_z_kraus(p: float) -> List[np.ndarray]:
     """

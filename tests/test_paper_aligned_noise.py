@@ -13,18 +13,12 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 import simulator.pauli_plus_simulator as ps
 
 
-def _stub_gpt(*args, **kwargs):
-    """Return a trivial Pauli channel with no errors."""
-    return {"I": 1.0, "X": 0.0, "Y": 0.0, "Z": 0.0}
-
-
 def _build_sim():
     cfg = {"distance": 3, "rounds": 2}
     return ps.PauliPlusSimulator(cfg, "Z")
 
 
-def test_readout_and_reset_noise_injected(monkeypatch):
-    monkeypatch.setattr(ps, "gpt_single_qubit", _stub_gpt)
+def test_readout_and_reset_noise_injected():
     sim = _build_sim()
     noise = {
         "p_readout": 0.1,
@@ -36,8 +30,7 @@ def test_readout_and_reset_noise_injected(monkeypatch):
     assert "X_ERROR" in text
 
 
-def test_correlated_cz_and_leakage_channels(monkeypatch):
-    monkeypatch.setattr(ps, "gpt_single_qubit", _stub_gpt)
+def test_correlated_cz_and_leakage_channels():
     sim = _build_sim()
     noise = {
         "p_cz_crosstalk_ZZ": 0.2,

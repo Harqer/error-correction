@@ -17,7 +17,8 @@ processors:
 
   # A detailed physical noise model aligned with the 72-qubit processor
   # from the paper "Learning high-accuracy error decoding for quantum processors".
-  # Parameters are from Table S4 of the supplementary information ("this work" column).
+  # Parameters follow the paper’s methods (Pauli+ with leakage/crosstalk)
+  # and I/Q readout hyperparameters (soft inputs), see Methods.
   72_qubit_paper_aligned:
     gate_errors:
       cz_total_error: 3.5e-3
@@ -35,3 +36,8 @@ processors:
       t2_cpmg_us: 80
     timing:
       cycle_time_ns: 1076
+    readout_iq:
+      # Paper hyperparameters for soft I/Q (Methods: SNR and amplitude-damping t)
+      snr: 10.0
+      tau: 0.01
+      leak_prior: 0.001

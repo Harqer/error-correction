@@ -92,6 +92,23 @@ python ai_models/decode.py \
 python plot_alphaqubit_results.py --input results/metrics.json
 ```
 
+### Paper-aligned 噪声模型参数
+
+`configs/paper_aligned.yaml` 提供了与 Google 论文中物理机制一一对应的参数，主要包括：
+
+| 参数 | 物理机制 |
+| --- | --- |
+| `T1_us`, `Tphi_us` | 振幅/相位弛豫，经 GPT 处理后注入到所有 1Q 门 |
+| `p_cz_crosstalk_ZZ` | 并行 CZ 的 ZZ 串扰，作为相关错误注入 |
+| `p_cz_swap_like` | CZ 期间的 swap‑like 误差，建模为 (XX+YY)/2 |
+| `p_cz_leak_11_to_02` | 相位诱导的泄漏，近似为相关 ZZ 误差 |
+| `p_leak_transport_12_to_30` | 泄漏传输，引入附加的单量子比特 Pauli 噪声 |
+| `p_readout`, `p_reset` | 测量与复位的经典翻转误差 |
+| `p_heat`, `dqlr_matrix` | 被动加热与 DQLR 不完美，折算为额外的 Pauli 噪声 |
+| `p_1q_excess`, `p_cz_excess`, `p_idle_excess` | 门前后及空闲期间的残余 Pauli 噪声 |
+
+这些参数在 `simulator.PauliPlusSimulator.apply_paper_aligned_noise` 中被消费，确保仿真噪声与论文方法保持一致。
+
 ## 全流程示例：从噪声文件生成到 NPU 上的全规模训练
 
 1. **生成噪声样本**  

@@ -59,6 +59,8 @@ def _twirl_pauli_probs_2q_with_leakage(
 
     # Combine (order is irrelevant up to twirling; we follow paper approach).
     ch = kraus_utils.combine_kraus_channels(deco, dep)
+    # Embed qubit channel into two-qutrit space before adding leakage.
+    ch = kraus_utils.lift_2q_kraus_to_qutrit(ch)
     ch = kraus_utils.combine_kraus_channels(ch, cz_leak)
 
     # Generalized Pauli twirling (qutrit levels) via leakysim.

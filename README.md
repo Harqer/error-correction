@@ -109,6 +109,21 @@ python plot_alphaqubit_results.py --input results/metrics.json
 
 这些参数在 `simulator.PauliPlusSimulator.apply_paper_aligned_noise` 中被消费，确保仿真噪声与论文方法保持一致。
 
+### 默认参数取值（来自论文 Table S4）
+
+| YAML 键 | 数值 | 来源 |
+| --- | --- | --- |
+| `cycle_ns` | `1076.0` | 循环时间 |
+| `T1_us` | `73.0` | 平均 $T_1$ |
+| `Tphi_us` | `720.0` | 调整以复现 $0.9\times10^{-2}$ 空闲误差 |
+| `p_heat` | `2.5e-4` | 泄漏加热概率 |
+| `p_readout` | `8.0e-3` | 读出误差 |
+| `p_reset` | `1.5e-3` | 复位误差 |
+| `p_cz_crosstalk_ZZ` | `5.5e-4` | CZ 串扰 |
+| `p_cz_leak_11_to_02` | `2.0e-4` | CZ 泄漏概率 |
+| `p_cz_excess` | `2.75e-3` | 其余 CZ 误差以匹配 $3.5\times10^{-3}$ 总误差 |
+| `p_1q_excess` | `6.2e-4` | 单量子比特门误差 |
+
 ## 全流程示例：从噪声文件生成到 NPU 上的全规模训练
 
 1. **生成噪声样本**  

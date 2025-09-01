@@ -10,7 +10,9 @@ import pathlib
 import sys
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
+import yaml
 import simulator.pauli_plus_simulator as ps
+from google_qec_paper_noise_model.paper_aligned import PaperAlignedNoiseModel
 
 
 def _build_sim():
@@ -44,4 +46,21 @@ def test_correlated_cz_and_leakage_channels():
     # correlated mechanisms use CORRELATED_ERROR ("E") and PAULI_CHANNEL_1
     assert "E(" in text
     assert text.count("PAULI_CHANNEL_1") >= 1
+
+
+def test_paper_values_match_config():
+    cfg = yaml.safe_load(open("configs/paper_aligned.yaml"))
+    cfg.update({"distance": 3, "rounds": 1})
+    model = PaperAlignedNoiseModel(cfg, "z")
+
+    idle_error = sum(
+        model._ptm_1q_idle[k] for k in ("X", "Y", "Z")
+    )
+
+    assert abs(idle_error - 0.009) < 5e-4
+    assert cfg["p_readout"] == 0.008
+    assert cfg["p_reset"] == 0.0015
+    assert cfg["p_cz_crosstalk_ZZ"] == 5.5e-4
+    assert cfg["p_cz_leak_11_to_02"] == 2.0e-4
+    assert cfg["p_1q_excess"] == 6.2e-4
 

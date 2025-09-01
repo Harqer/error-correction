@@ -4,14 +4,14 @@
 # if you want to reproduce a specific dataset.
  
 
-cycle_ns: 1100.0
-T1_us: 68.0
-Tphi_us: 89.0
-p_heat: 0.0
+cycle_ns: 1076.0
+T1_us: 73.0
+Tphi_us: 720.0
+p_heat: 0.00025
 
 # Readout / reset
-p_readout: 0.003
-p_reset: 0.003
+p_readout: 0.008
+p_reset: 0.0015
 
  
 # DQLR (rows sum to 1.0). Order of basis states: |0>, |1>, |2>
@@ -29,15 +29,15 @@ twirl_idles_each_tick: false
 twirl_after_1q_gates: true
  
 # CZ related
-p_cz_leak_11_to_02: 0.001
-p_cz_crosstalk_ZZ: 0.0005
-p_cz_swap_like: 0.0005
-p_leak_transport_12_to_30: 0.0005
+p_cz_leak_11_to_02: 0.0002
+p_cz_crosstalk_ZZ: 0.00055
+p_cz_swap_like: 0.0
+p_leak_transport_12_to_30: 0.0
  
 # Residual (“excess”) errors
-p_1q_excess: 0.0005
-p_cz_excess: 0.0010
-p_idle_excess: 0.0005
+p_1q_excess: 0.00062
+p_cz_excess: 0.00275
+p_idle_excess: 0.0
  
 
 # Injection controls

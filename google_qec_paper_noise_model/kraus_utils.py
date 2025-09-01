@@ -258,6 +258,42 @@ def kraus_cz_leakage(prob: float) -> list[np.ndarray]:
     return [e0, e1]
 
 
+def lift_2q_kraus_to_qutrit(kraus_ops: list[np.ndarray]) -> list[np.ndarray]:
+    """Embed two-qubit Kraus operators into a two-qutrit space.
+
+    The input operators are assumed to act on the computational
+    subspace spanned by {|00>, |01>, |10>, |11>} in that order. We
+    embed these into a 9x9 matrix acting on two qutrits (|0>,|1>,|2>),
+    with the remaining five basis states left untouched. An additional
+    Kraus operator is appended to act as identity on the leaked
+    subspace, ensuring the resulting channel is trace preserving.
+
+    Args:
+        kraus_ops: List of 4x4 Kraus operators.
+
+    Returns:
+        List of 9x9 Kraus operators operating on two qutrits.
+    """
+
+    comp_idx = [0, 1, 3, 4]  # positions of |00>,|01>,|10>,|11>
+    leak_idx = [i for i in range(9) if i not in comp_idx]
+
+    lifted = []
+    for k in kraus_ops:
+        k9 = np.zeros((9, 9), dtype=complex)
+        for a, ia in enumerate(comp_idx):
+            for b, jb in enumerate(comp_idx):
+                k9[ia, jb] = k[a, b]
+        lifted.append(k9)
+
+    # Identity on leaked subspace to keep channel trace preserving
+    leak_eye = np.zeros((9, 9), dtype=complex)
+    for idx in leak_idx:
+        leak_eye[idx, idx] = 1.0
+    lifted.append(leak_eye)
+    return lifted
+
+
 def kraus_from_pauli_probs(probs: list[float], n_qubits: int) -> list[np.ndarray]:
     """
     Creates a Kraus representation of a Pauli channel from a list of probabilities.

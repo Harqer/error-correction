@@ -76,7 +76,8 @@ def test_circuit_stats_are_reasonable():
 
     # Check two-qubit gate noise
     num_two_qubit_gates = count_ops(ideal_circuit, "CX") + count_ops(ideal_circuit, "CZ")
-    assert count_ops(circuit, "PAULI_CHANNEL_2") == num_two_qubit_gates * 2
+    # Each two-qubit gate is followed by a single PAULI_CHANNEL_2 noise operation.
+    assert count_ops(circuit, "PAULI_CHANNEL_2") == num_two_qubit_gates
 
     # Check single-qubit gate noise
     num_single_qubit_gates = sum(

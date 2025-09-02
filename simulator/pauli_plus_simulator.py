@@ -39,7 +39,9 @@ from google_qec_paper_noise_model.channels import (
     lift_qubit_to_qutrit,
     passive_heating_kraus,
     dqlr_kraus,
-    leakage_injection_kraus,
+    leakage_injection_kraus,     # kept for completeness
+    cz_induced_leakage_kraus,    # new: two‑qutrit CZ‑leakage model
+    leakage_transport_kraus,     # new: two‑qutrit leakage transport
 )
 from google_qec_paper_noise_model.kraus_utils import combine_kraus_channels
 
@@ -185,20 +187,30 @@ class PauliPlusSimulator:
             float(dqlr_probs[3]),
         )
 
-        # CZ leakage and transport channels approximated via single-qubit twirls.
-        cz_px = cz_py = cz_pz = 0.0
+        # ----- Exact two-qubit GPT for CZ-related channels (paper method) -----
+        # Build composed two‑qutrit channel for (leakage during CZ) ∘ (leakage transport)
+        cz_Ks: List = []
         if p_cz_leak > 0:
-            leak_probs, _ = twirl_to_pauli_channel(
-                leakage_injection_kraus(p_cz_leak / 2.0), 1
-            )
-            cz_px += float(leak_probs[1])
-            cz_py += float(leak_probs[2])
-            cz_pz += float(leak_probs[3])
+            cz_Ks = cz_induced_leakage_kraus(p_cz_leak)
         if p_leak_transport > 0:
-            s = p_leak_transport / 3.0
-            cz_px += s
-            cz_py += s
-            cz_pz += s
+            Ks_move = leakage_transport_kraus(p_leak_transport)
+            cz_Ks = Ks_move if not cz_Ks else combine_kraus_channels(cz_Ks, Ks_move)
+        # Twirl to exact 2‑qubit Pauli channel (16 probs including II)
+        cz_probs16 = None
+        if cz_Ks:
+            cz_probs16, _ = twirl_to_pauli_channel(cz_Ks, 2)
+        # Helper: map 16‑probs (II,IX,IY,IZ, XI,XX,XY,XZ, YI,YX,YY,YZ, ZI,ZX,ZY,ZZ)
+        # to Stim PAULI_CHANNEL_2 args (15 probs for everything except II).
+        def _probs16_to_stim_args(p16):
+            order = [1,2,3, 4,5,6,7, 8,9,10,11, 12,13,14,15]  # exclude 0=II
+            return [float(p16[i]) for i in order]
+        # Uniform 2‑qubit depolarizing "excess" to be added on top if configured.
+        def _add_cz_excess(args15: List[float]) -> List[float]:
+            if p_cz_excess <= 0:
+                return args15
+            u = p_cz_excess / 15.0
+            scale = 1.0 - p_cz_excess
+            return [a * scale + u for a in args15]
 
         new_circuit = stim.Circuit()
         current_cz_pairs: List[Tuple[int, int]] = []
@@ -208,6 +220,15 @@ class PauliPlusSimulator:
             if px_ <= 0 and py_ <= 0 and pz_ <= 0:
                 return
             new_circuit.append_operation("PAULI_CHANNEL_1", [q], [px_, py_, pz_])
+
+        def add_pauli_ch2(a: int, b: int, probs16) -> None:
+            if probs16 is None:
+                return
+            args15 = _probs16_to_stim_args(probs16)
+            args15 = _add_cz_excess(args15)
+            if all(v <= 0 for v in args15):
+                return
+            new_circuit.append_operation("PAULI_CHANNEL_2", [a, b], args15)
 
         def inject_cz_pair(a: int, b: int) -> None:
             if p_cz_zz > 0:
@@ -227,13 +248,8 @@ class PauliPlusSimulator:
                     [stim.target_y(a), stim.target_y(b)],
                     0.5 * p_cz_swap,
                 )
-            if cz_px > 0 or cz_py > 0 or cz_pz > 0:
-                add_pauli_ch1(a, cz_px, cz_py, cz_pz)
-                add_pauli_ch1(b, cz_px, cz_py, cz_pz)
-            if p_cz_excess > 0:
-                s = p_cz_excess / 3.0
-                add_pauli_ch1(a, s, s, s)
-                add_pauli_ch1(b, s, s, s)
+            # Inject exact 2‑qubit Pauli channel from GPT of two‑qutrit CZ noise
+            add_pauli_ch2(a, b, cz_probs16)
 
         for inst in self.circuit:
             name = inst.name

@@ -159,7 +159,7 @@ class SurfaceCodeCircuitBuilder:
             f"surface_code:rotated_memory_{self.basis}",
             rounds=self.rounds,
             distance=self.distance,
-        )
+        ).flattened()
         t1 = float(self.params["decoherence"]["t1_us"]) * 1e-6
         t2 = float(self.params["decoherence"]["t2_cpmg_us"]) * 1e-6
         p_reset = float(self.params["readout_reset"]["reset"])

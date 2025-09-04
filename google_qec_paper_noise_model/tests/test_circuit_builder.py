@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Integration tests for the circuit_builder module, specifically for the
-approximated physical noise model.
+Integration tests for the circuit_builder module using the paper-aligned
+physical noise model.
 """
 
 import pytest
@@ -25,7 +25,7 @@ def test_circuit_builder_builds_a_circuit():
 def test_circuit_contains_expected_instructions():
     """
     Tests that the generated circuit contains the expected types of instructions
-    for the physical noise model.
+    for the paper-aligned physical noise model.
     """
     builder = circuit_builder.SurfaceCodeCircuitBuilder(
         distance=3, rounds=2, processor="72_qubit_paper_aligned"
@@ -51,7 +51,7 @@ def test_circuit_contains_expected_instructions():
 def test_circuit_stats_are_reasonable():
     """
     Checks the stats of a small generated circuit to ensure the number of
-    noise operations is reasonable with the approximated physical noise model.
+    noise operations is reasonable with the paper-aligned physical noise model.
     """
     distance = 3
     rounds = 2

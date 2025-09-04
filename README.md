@@ -107,12 +107,12 @@ python plot_alphaqubit_results.py --input results/metrics.json
 | `p_cz_leak_11_to_02` | 相位诱导的泄漏，近似为相关 ZZ 误差 |
 | `p_leak_transport_12_to_30` | 泄漏传输，引入附加的单量子比特 Pauli 噪声 |
 | `p_readout`, `p_reset` | 测量与复位的经典翻转误差 |
-| `p_heat`, `dqlr_matrix` | 被动加热与 DQLR 不完美，折算为额外的 Pauli 噪声 |
+| `p_heat_01`, `p_heat_12`, `dqlr_matrix` | 多级被动加热与 DQLR 不完美，折算为额外的 Pauli 噪声 |
 | `p_1q_excess`, `p_cz_excess`, `p_idle_excess` | 门前后及空闲期间的残余 Pauli 噪声 |
 
-这些参数在 `simulator.PauliPlusSimulator.apply_paper_aligned_noise` 中被消费，确保仿真噪声与论文方法保持一致。
-此外，新增的 `paper_aligned` 运行模式**直接委托**到本仓库随附的 `google_qec_paper_noise_model`
-实现，保证与论文方法 100% 一致。
+该实现还显式模拟了四能级泄漏传输（`|12⟩→|30⟩`, `|21⟩→|03⟩`）、顺序被动加热（`p_heat_01`, `p_heat_12`）以及三结果读出概率 `[p0, p1, pl]`，完整复现论文描述的噪声过程。
+
+这些参数在 `simulator.PauliPlusSimulator.apply_paper_aligned_noise` 中被消费，确保仿真噪声与论文方法保持一致。此 `paper_aligned` 模式**直接委托**到本仓库随附的 `google_qec_paper_noise_model` 实现，保证与论文方法 100% 一致。
 
 ### 默认参数取值（来自论文 Table S4）
 
@@ -121,7 +121,8 @@ python plot_alphaqubit_results.py --input results/metrics.json
 | `cycle_ns` | `1076.0` | 循环时间 |
 | `T1_us` | `73.0` | 平均 $T_1$ |
 | `Tphi_us` | `720.0` | 调整以复现 $0.9\times10^{-2}$ 空闲误差 |
-| `p_heat` | `2.5e-4` | 泄漏加热概率 |
+| `p_heat_01` | `0.0` | $|0\rangle \to |1\rangle$ 加热概率 |
+| `p_heat_12` | `2.5e-4` | $|1\rangle \to |2\rangle$ 加热概率 |
 | `p_readout` | `8.0e-3` | 读出误差 |
 | `p_reset` | `1.5e-3` | 复位误差 |
 | `p_cz_crosstalk_ZZ` | `5.5e-4` | CZ 串扰 |

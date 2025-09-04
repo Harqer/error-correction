@@ -86,81 +86,63 @@ def lift_qubit_to_qutrit(Ks_2x2: List[np.ndarray]) -> List[np.ndarray]:
     return out
 
 def cz_induced_leakage_kraus(p_leak: float) -> List[np.ndarray]:
+    """Two-ququart CZ-induced leakage channel.
+
+    Models the dephasing-driven processes ``|11> -> |02>`` and ``|11> -> |20>``
+    each occurring with probability ``p_leak/2``.  All other basis states,
+    including those involving the fourth level used by leakage transport, are
+    left unaffected.
     """
-    Two-qutrit channel modeling |11> -> |02> or |20| due to CZ dephasing-leakage,
-    with total probability ~ p_leak (split evenly).
-    We act as identity elsewhere to first order.
-    """
+
     p = float(p_leak)
-    dim = 9
-    I9 = np.eye(dim, dtype=complex)
-    # Index map for |ij> with i,j in {0,1,2}: idx = 3*i + j
-    def ket(i,j):
-        v = np.zeros((dim,1), complex)
-        v[3*i + j,0] = 1.0
-        return v
-    # Identity part minus the |11> amplitude to keep TP.
-    K0 = I9.copy()
-    # reduce |11><11|
-    idx11 = 3*1 + 1
+    dim = 16
+    I16 = np.eye(dim, dtype=complex)
+
+    idx = lambda i, j: 4 * i + j
+    K0 = I16.copy()
+    idx11 = idx(1, 1)
     K0[idx11, idx11] = np.sqrt(max(0.0, 1.0 - p))
-    # Branches to leaked states
-    K1 = np.zeros((dim,dim), complex)  # |02><11|
-    K2 = np.zeros((dim,dim), complex)  # |20><11|
-    K1[3*0+2, 3*1+1] = np.sqrt(p/2.0)
-    K2[3*2+0, 3*1+1] = np.sqrt(p/2.0)
+
+    K1 = np.zeros((dim, dim), complex)
+    K2 = np.zeros((dim, dim), complex)
+    K1[idx(0, 2), idx11] = np.sqrt(p / 2.0)  # |02><11|
+    K2[idx(2, 0), idx11] = np.sqrt(p / 2.0)  # |20><11|
+
     return [K0, K1, K2]
 
 def leakage_transport_kraus(p_move: float) -> List[np.ndarray]:
-    """Simplified leakage transport channel.
+    """Four-level leakage transport channel.
 
-    The Supplementary Information of the paper describes a stochastic process
-    that moves population from ``|12>`` to ``|30>`` (and ``|21>`` to ``|03>``)
-    during a faulty CZ.  Our simulator only models up to the ``|2>`` level, so
-    we approximate this transport as a swap of leakage between the two qubits.
+    The paper describes a stochastic process where population in ``|12>`` (or
+    ``|21>``) is transferred to the opposite qubit while the partner is reset to
+    ``|0>``.  This is modelled explicitly in a two-ququart (four-level)
+    Hilbert space with the transitions
 
-    With probability ``p_move/2`` the state ``|12>`` becomes ``|21>`` and with
-    the same probability ``|21>`` becomes ``|12>``.  The remainder of the time
-    the channel acts as identity.  This captures the stochastic transport of
-    leakage between qubits while keeping the model within a two-qutrit space.
+    - ``|12> → |30>`` with probability ``p_move``
+    - ``|21> → |03>`` with probability ``p_move``
+
+    All other basis states are left unchanged.  The channel is trace preserving
+    and reduces to identity when ``p_move = 0``.
     """
 
     p = float(p_move)
-    dim = 9
-    I9 = np.eye(dim, dtype=complex)
+    dim = 16
+    I16 = np.eye(dim, dtype=complex)
 
-    # Identity branch with reduced amplitudes on the affected states.
-    K0 = I9.copy()
-    idx12 = 3 * 1 + 2
-    idx21 = 3 * 2 + 1
-    K0[idx12, idx12] = np.sqrt(max(0.0, 1.0 - p / 2.0))
-    K0[idx21, idx21] = np.sqrt(max(0.0, 1.0 - p / 2.0))
+    # Identity branch with reduced amplitude on transported states.
+    K0 = I16.copy()
+    idx = lambda i, j: 4 * i + j
+    idx12 = idx(1, 2)
+    idx21 = idx(2, 1)
+    K0[idx12, idx12] = np.sqrt(max(0.0, 1.0 - p))
+    K0[idx21, idx21] = np.sqrt(max(0.0, 1.0 - p))
 
-    # Swapped branches |12><21| and |21><12|
+    # Transport branches |30><12| and |03><21|
     K1 = np.zeros((dim, dim), complex)
     K2 = np.zeros((dim, dim), complex)
-    K1[idx12, idx21] = np.sqrt(p / 2.0)
-    K2[idx21, idx12] = np.sqrt(p / 2.0)
+    K1[idx(3, 0), idx12] = np.sqrt(p)  # |30><12|
+    K2[idx(0, 3), idx21] = np.sqrt(p)  # |03><21|
 
-    return [K0, K1, K2]
-
-
-def passive_heating_kraus(p_heat: float) -> List[np.ndarray]:
-    """Single-qutrit passive heating into ``|2>``.
-
-    Each basis state ``|0>`` or ``|1>`` moves to the leaked level ``|2>`` with
-    probability ``p_heat``.  ``|2>`` remains ``|2>``.  The channel is trace
-    preserving and acts as identity when ``p_heat=0``.
-    """
-
-    p = float(p_heat)
-    I3 = np.eye(3, dtype=complex)
-    K0 = np.sqrt(1.0 - p) * I3
-    K1 = np.zeros((3, 3), complex)
-    K2 = np.zeros((3, 3), complex)
-    # |2><0| and |2><1|
-    K1[2, 0] = np.sqrt(p)
-    K2[2, 1] = np.sqrt(p)
     return [K0, K1, K2]
 
 

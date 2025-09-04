@@ -59,17 +59,18 @@ class IQReadoutModel:
             "pl": numL / Z,
         }
 
-    def soft_meas_prob1(self, x: np.ndarray) -> np.ndarray:
-        """Soft probability that the measured bit is '1' (m=1), marginalizing leakage."""
-        post = self.posteriors(x)
-        # In the paper, leakage has a distinct label; here we keep p1 as the soft bit=1 prob
-        # and let downstream logic optionally keep 'pl' as a separate soft input.
-        return post["p1"]
-
-    def soft_vector(self, x: np.ndarray) -> np.ndarray:
-        """Return concatenated soft vector [p0, p1, pl] per sample."""
+    def soft_meas_probs(self, x: np.ndarray) -> np.ndarray:
+        """Return soft measurement probabilities [p0, p1, pl] for each sample."""
         post = self.posteriors(x)
         return np.stack([post["p0"], post["p1"], post["pl"]], axis=-1)
+
+    def soft_meas_prob1(self, x: np.ndarray) -> np.ndarray:
+        """Backward-compatibility helper returning only P(m=1)."""
+        return self.soft_meas_probs(x)[..., 1]
+
+    def soft_vector(self, x: np.ndarray) -> np.ndarray:
+        """Alias of soft_meas_probs for historic callers."""
+        return self.soft_meas_probs(x)
 
     # Convenience generators for synthetic I/Q samples (useful for tests)
     def sample_states(self, n: int, rng: np.random.Generator) -> Tuple[np.ndarray, np.ndarray]:

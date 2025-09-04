@@ -30,7 +30,9 @@ def _project_1q_to_qubit(K: np.ndarray) -> np.ndarray:
 def _project_2q_to_qubit(K: np.ndarray) -> np.ndarray:
     if K.shape[0] == 4:
         return K
-    comp = [0, 1, 3, 4]
+    dim = K.shape[0]
+    n = int(np.sqrt(dim))
+    comp = [n * i + j for i in range(2) for j in range(2)]
     K4 = np.zeros((4, 4), dtype=complex)
     for a, ia in enumerate(comp):
         for b, ib in enumerate(comp):
@@ -58,16 +60,19 @@ def _avg_leakage_1q(Ks: List[np.ndarray]) -> float:
 def _avg_leakage_2q(Ks: List[np.ndarray]) -> float:
     if all(K.shape[0] == 4 for K in Ks):
         return 0.0
-    comp = [0, 1, 3, 4]
+    dim = Ks[0].shape[0]
+    n = int(np.sqrt(dim))
+    comp = [n * i + j for i in range(2) for j in range(2)]
     leaked = 0.0
     for basis_idx in comp:
-        rho = np.zeros((9, 9), complex); rho[basis_idx, basis_idx] = 1.0
+        rho = np.zeros((dim, dim), complex)
+        rho[basis_idx, basis_idx] = 1.0
         E = sum(K @ rho @ K.conj().T for K in Ks)
-        mask = np.zeros(9, float)
-        for i in range(3):
-            for j in range(3):
-                if i == 2 or j == 2:
-                    mask[3 * i + j] = 1.0
+        mask = np.zeros(dim, float)
+        for i in range(n):
+            for j in range(n):
+                if i >= 2 or j >= 2:
+                    mask[n * i + j] = 1.0
         leaked += float(np.real(np.sum(np.diag(E) * mask)))
     return leaked / 4.0
 

@@ -16,7 +16,8 @@ p_readout: 8.0e-3
 p_reset: 1.5e-3
 
 # Leakage-related parameters (modelled within paper implementation)
-p_heat: 2.5e-4                    # passive heating / leakage re-population
+p_heat_01: 0.0                    # |0> -> |1> heating per cycle
+p_heat_12: 2.5e-4                # |1> -> |2> heating per cycle
 p_cz_leak_11_to_02: 2.0e-4        # CZ-induced |11> -> |02> leakage surrogate
 p_leak_transport_12_to_30: 0.0    # optional leakage transport; kept 0 unless needed
 

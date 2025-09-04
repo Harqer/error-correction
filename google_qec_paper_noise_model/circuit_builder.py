@@ -44,11 +44,13 @@ def _twirl_pauli_probs_2q_with_leakage(
     t2: float,
     p_cz_leak: float,
 ) -> Tuple[np.ndarray, float]:
-    """
-    Compose T1/T2 idle ⊗ idle, depolarizing and a CZ leakage channel,
-    then perform generalized Pauli twirling (GPT) with 3 levels via leakysim.
-    Returns (pauli_probs_2q[15], p_leak_out), where p_leak_out approximates
-    transition into leaked subspace during the gate.
+    """Full two-qubit twirling including exact leakage accounting.
+
+    Composes T1/T2 idle ⊗ idle, depolarizing noise and the CZ-induced leakage
+    channel and performs generalized Pauli twirling (GPT) in the qutrit
+    representation.  Returns a tuple ``(pauli_probs_2q[15], p_leak_out)`` where
+    ``p_leak_out`` is the probability that population leaves the computational
+    subspace during the gate.
     """
     # 2-qubit decoherence
     dec1 = kraus_utils.kraus_t1_t2_idle(t_gate, t1, t2)
@@ -65,15 +67,16 @@ def _twirl_pauli_probs_2q_with_leakage(
 
     # Generalized Pauli twirling (qutrit levels) via leakysim.
     gpt = leakysim.generalized_pauli_twirling(ch, num_qubits=2, num_level=3)
-    # Accumulate Pauli error probabilities conditioned on comp->comp transitions.
-    # We assume leakysim exposes LeakageStatus('COMP' | 'LEAK') and Pauli labels 'I','X','Y','Z' strings.
+
     comp = leakysim.LeakageStatus('COMP')
+    leak = leakysim.LeakageStatus('LEAK')
     probs = []
     for pa in ['XI','YI','ZI','IX','IY','IZ','XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
-        # Map 'XY' etc. to leakysim pauli tokens (implementation-dependent).
-        # We request probability staying in computational subspace:
         probs.append(gpt.get_prob_from_to(comp, comp, pa))
-    p_leak = 1.0 - sum(probs)  # remaining probability accounts for leakage/identity transitions
+
+    # Leakage probability is taken directly from GPT instead of inferred.
+    p_leak = gpt.get_prob_from_to(comp, leak, 'II')
+
     # Guard clipping
     probs = np.clip(np.array(probs, dtype=float), 0.0, None)
     s = probs.sum()

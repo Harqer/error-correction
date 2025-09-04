@@ -56,8 +56,11 @@ python generate_data.py --model si1000 --samples 10000
 # 泄漏、串扰与软读出（Pauli+）
 python generate_data.py --model pauli_plus --samples 10000
 
-# 与论文对齐的物理噪声模型
-python generate_data.py --model paper_aligned --samples 10000
+# 与论文对齐的物理噪声模型（直接调用本仓库内 paper 的实现）
+python generate_data.py --model paper_aligned --basis z --samples 10000
+# 或 X 基
+python generate_data.py --model paper_aligned --basis x --samples 10000
+# 使用 --basis 参数在 X 与 Z 基间切换
 ```
 
 生成的数据默认保存在 `output/` 目录。
@@ -108,6 +111,8 @@ python plot_alphaqubit_results.py --input results/metrics.json
 | `p_1q_excess`, `p_cz_excess`, `p_idle_excess` | 门前后及空闲期间的残余 Pauli 噪声 |
 
 这些参数在 `simulator.PauliPlusSimulator.apply_paper_aligned_noise` 中被消费，确保仿真噪声与论文方法保持一致。
+此外，新增的 `paper_aligned` 运行模式**直接委托**到本仓库随附的 `google_qec_paper_noise_model`
+实现，保证与论文方法 100% 一致。
 
 ### 默认参数取值（来自论文 Table S4）
 

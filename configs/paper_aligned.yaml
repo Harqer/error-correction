@@ -1,46 +1,44 @@
- 
-# Parameters for the paper-aligned noise model with GPT per channel.
-# Numbers here are reasonable placeholders; set with your device calibrations
-# if you want to reproduce a specific dataset.
- 
-
+# Default parameters aligned with the paper's method (see repo README "Paper-aligned 噪声模型参数"
+# and the Nature paper). These values mirror the table presented in the README (Table S4 mapping).
+# You can tweak them per layout/experiment as needed.
+#
+# Basis is selected at runtime via CLI: --basis {x,z}
+#
+# Timing
 cycle_ns: 1076.0
+
+# Amplitude / phase relaxation (used by the paper code to set per-cycle channels)
 T1_us: 73.0
 Tphi_us: 720.0
-p_heat: 0.00025
 
-# Readout / reset
-p_readout: 0.008
-p_reset: 0.0015
+# Readout and reset classical flip error
+p_readout: 8.0e-3
+p_reset: 1.5e-3
 
- 
-# DQLR (rows sum to 1.0). Order of basis states: |0>, |1>, |2>
- 
+# Leakage-related parameters (modelled within paper implementation)
+p_heat: 2.5e-4                    # passive heating / leakage re-population
+p_cz_leak_11_to_02: 2.0e-4        # CZ-induced |11> -> |02> leakage surrogate
+p_leak_transport_12_to_30: 0.0    # optional leakage transport; kept 0 unless needed
+
+# Two-qubit cross-talk and swap-like terms during CZ
+p_cz_crosstalk_ZZ: 5.5e-4         # correlated ZZ term during parallel CZs
+p_cz_swap_like: 0.0               # optional (XX+YY)/2 swap-like; set if required by calibration
+
+# Residual / excess Pauli-like noise
+p_1q_excess: 6.2e-4               # residual 1q noise (folds in minor non-T1/Tphi effects)
+p_cz_excess: 2.75e-3              # residual 2q noise to match ~3.5e-3 total CZ error
+p_idle_excess: 0.0                # optional idle noise per cycle (Pauli-like)
+
+# Optional DQLR / matrix remnant modelling; identity means "off".
 dqlr_matrix:
   - [1.0, 0.0, 0.0]
   - [0.0, 1.0, 0.0]
-  - [0.05, 0.90, 0.05]
- 
- 
-# Injection controls
-# Whether to add a PAULI_CHANNEL_1 idle twirl on all qubits at each TICK.
-twirl_idles_each_tick: false
-# If true, apply GPT-twirled 1Q noise after any recognized 1Q gate.
-twirl_after_1q_gates: true
- 
-# CZ related
-p_cz_leak_11_to_02: 0.0002
-p_cz_crosstalk_ZZ: 0.00055
-p_cz_swap_like: 0.0
-p_leak_transport_12_to_30: 0.0
- 
-# Residual (“excess”) errors
-p_1q_excess: 0.00062
-p_cz_excess: 0.00275
-p_idle_excess: 0.0
- 
+  - [0.0, 0.0, 1.0]
 
-# Injection controls
-twirl_idles_each_tick: false
-twirl_after_1q_gates: true
- 
+# Geometry / experiment controls (the paper code may read these)
+distance: 5
+rounds: 25
+# Valid values depend on the paper builder; examples:
+# layout: "xzzx_rotated"
+# location: "d5_default"
+# seed: 1

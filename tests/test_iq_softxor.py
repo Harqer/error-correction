@@ -12,9 +12,15 @@ def test_softxor_identity_cases():
     assert np.allclose(r[[0,-1]], [0.0, 0.0])
 
 def test_soft_detection_sequence_shape():
-    seq = [np.array([0.1, 0.9]), np.array([0.2, 0.8]), np.array([0.4, 0.6])]
-    de = soft_detection_sequence(seq)
+    seq = [
+        np.array([[0.9, 0.05, 0.05], [0.8, 0.1, 0.1]]),
+        np.array([[0.85, 0.1, 0.05], [0.75, 0.15, 0.1]]),
+        np.array([[0.8, 0.15, 0.05], [0.7, 0.2, 0.1]]),
+    ]
+    de, leak = soft_detection_sequence(seq)
     assert de.shape == (2, 2)
+    assert leak.shape == (3, 2)
+    assert np.allclose(leak, [[0.05, 0.1], [0.05, 0.1], [0.05, 0.1]])
 
 def test_iq_posteriors_sum_to_one():
     model = IQReadoutModel(snr=10.0, tau=0.01, p_leak_prior=1e-3)

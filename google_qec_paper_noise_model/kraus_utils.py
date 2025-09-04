@@ -219,75 +219,122 @@ def combine_kraus_channels(
     return [np.dot(k2, k1) for k2 in channel2 for k1 in channel1]
 
 
-def kraus_heating_to_2(prob: float) -> list[np.ndarray]:
-    """
-    Generates Kraus operators for a heating channel from |1> to |2>.
-    This is a simplified model for leakage heating.
+def kraus_leakage_heating(p01: float, p12: float) -> list[np.ndarray]:
+    """Full three-level heating channel.
+
+    Implements a sequential heating process ``|0> -> |1>`` with probability
+    ``p01`` and ``|1> -> |2>`` with probability ``p12`` while leaving ``|2>``
+    fixed.  This follows the multi-step heating model described in the paper
+    and is trace preserving for all ``0 <= p01, p12 <= 1``.
 
     Args:
-        prob: The probability of the |1> -> |2> transition.
+        p01: Probability of the ``|0> -> |1>`` transition.
+        p12: Probability of the ``|1> -> |2>`` transition.
 
     Returns:
-        A list of Kraus operators [E0, E1].
+        List of Kraus operators ``[K0, K1, K2]`` implementing the process.
     """
-    # Operator for the transition |1> -> |2>
-    e1 = np.sqrt(prob) * P12.T.conj() # This is |2><1|
-    # Operator for remaining in the subspace spanned by |0> and |1>
-    e0 = sqrtm(QUTRIT_I - e1.T.conj() @ e1)
-    return [e0, e1]
+
+    p01 = float(p01)
+    p12 = float(p12)
+
+    # Identity branch with reduced amplitudes on states that can heat.
+    K0 = np.eye(3, dtype=complex)
+    K0[0, 0] = np.sqrt(max(0.0, 1.0 - p01))
+    K0[1, 1] = np.sqrt(max(0.0, 1.0 - p12))
+
+    # Heating branches |1><0| and |2><1|
+    K1 = np.zeros((3, 3), complex)
+    K2 = np.zeros((3, 3), complex)
+    K1[1, 0] = np.sqrt(p01)
+    K2[2, 1] = np.sqrt(p12)
+
+    return [K0, K1, K2]
+
+
+def kraus_heating_to_2(prob: float) -> list[np.ndarray]:
+    """Compatibility wrapper for the legacy single-step model.
+
+    Historically the project used a simplified heating channel that only
+    implemented the ``|1> -> |2>`` transition.  This function now delegates to
+    :func:`kraus_leakage_heating` with ``p01=0`` to retain backwards
+    compatibility with existing code.
+
+    Args:
+        prob: Probability of the ``|1> -> |2>`` transition.
+
+    Returns:
+        List of Kraus operators implementing the heating process.
+    """
+
+    return kraus_leakage_heating(0.0, prob)
 
 
 def kraus_cz_leakage(prob: float) -> list[np.ndarray]:
-    """
-    Generates Kraus operators for dephasing-induced leakage during a CZ gate,
-    specifically the |11> -> |02> transition.
+    """CZ-induced leakage channel.
+
+    Models the dephasing-driven leakage processes ``|11> -> |02>`` and
+    ``|11> -> |20>`` occurring during a faulty CZ gate.  Each branch occurs
+    with probability ``prob/2`` and all other basis states are left unchanged,
+    matching the stochastic description in the paper.
 
     Args:
-        prob: The probability of this leakage event.
+        prob: Total probability that ``|11>`` leaks during the gate.
 
     Returns:
-        A list of Kraus operators for the two-qutrit system.
+        A list of Kraus operators acting on two qutrits.
     """
-    # Projector for the |11> state
-    p11 = np.kron(P1, P1)
-    # Transition operator for |02><11|
-    t_02_11 = np.kron(P01.T.conj(), P21.T.conj())
 
-    e1 = np.sqrt(prob) * t_02_11
-    e0 = sqrtm(np.eye(9, dtype=complex) - e1.T.conj() @ e1)
-    return [e0, e1]
+    p = float(prob)
+    dim = 9
+    I9 = np.eye(dim, dtype=complex)
+
+    # Identity branch with reduced amplitude on |11> to preserve trace.
+    K0 = I9.copy()
+    idx11 = 3 * 1 + 1
+    K0[idx11, idx11] = np.sqrt(max(0.0, 1.0 - p))
+
+    # Leakage branches |02><11| and |20><11|
+    K1 = np.zeros((dim, dim), complex)
+    K2 = np.zeros((dim, dim), complex)
+    K1[3 * 0 + 2, idx11] = np.sqrt(p / 2.0)
+    K2[3 * 2 + 0, idx11] = np.sqrt(p / 2.0)
+
+    return [K0, K1, K2]
 
 
-def lift_2q_kraus_to_qutrit(kraus_ops: list[np.ndarray]) -> list[np.ndarray]:
-    """Embed two-qubit Kraus operators into a two-qutrit space.
+def lift_2q_kraus_to_qutrit(kraus_ops: list[np.ndarray], levels: int = 3) -> list[np.ndarray]:
+    """Embed two-qubit Kraus operators into a two-``levels``-level space.
 
-    The input operators are assumed to act on the computational
-    subspace spanned by {|00>, |01>, |10>, |11>} in that order. We
-    embed these into a 9x9 matrix acting on two qutrits (|0>,|1>,|2>),
-    with the remaining five basis states left untouched. An additional
-    Kraus operator is appended to act as identity on the leaked
-    subspace, ensuring the resulting channel is trace preserving.
+    The input operators act on the computational subspace spanned by
+    {|00>, |01>, |10>, |11>} and are embedded into an ``(levels^2)x(levels^2)``
+    matrix acting on two ``levels``-level systems (e.g. qutrits for
+    ``levels=3`` or ququarts for ``levels=4``).  The remaining basis states are
+    left untouched and an additional Kraus operator is appended to act as
+    identity on the leaked subspace, keeping the channel trace preserving.
 
     Args:
         kraus_ops: List of 4x4 Kraus operators.
+        levels: Number of levels per qubit (default 3).
 
     Returns:
-        List of 9x9 Kraus operators operating on two qutrits.
+        List of ``(levels^2)x(levels^2)`` Kraus operators.
     """
 
-    comp_idx = [0, 1, 3, 4]  # positions of |00>,|01>,|10>,|11>
-    leak_idx = [i for i in range(9) if i not in comp_idx]
+    dim = levels * levels
+    comp_idx = [levels * i + j for i in range(2) for j in range(2)]
+    leak_idx = [i for i in range(dim) if i not in comp_idx]
 
     lifted = []
     for k in kraus_ops:
-        k9 = np.zeros((9, 9), dtype=complex)
+        kN = np.zeros((dim, dim), dtype=complex)
         for a, ia in enumerate(comp_idx):
             for b, jb in enumerate(comp_idx):
-                k9[ia, jb] = k[a, b]
-        lifted.append(k9)
+                kN[ia, jb] = k[a, b]
+        lifted.append(kN)
 
     # Identity on leaked subspace to keep channel trace preserving
-    leak_eye = np.zeros((9, 9), dtype=complex)
+    leak_eye = np.zeros((dim, dim), dtype=complex)
     for idx in leak_idx:
         leak_eye[idx, idx] = 1.0
     lifted.append(leak_eye)

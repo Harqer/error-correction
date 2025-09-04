@@ -6,7 +6,7 @@ import numpy as np
 from simulator.pauli_plus_simulator import PauliPlusSimulator
 from .gpt import amp_phase_kraus
 from .gpta import twirl_to_pauli_channel
-from .channels import passive_heating_kraus, lift_qubit_to_qutrit, dqlr_kraus
+from .channels import lift_qubit_to_qutrit, dqlr_kraus
 from . import kraus_utils
 
 
@@ -19,7 +19,8 @@ class PaperAlignedNoiseConfig:
     # Decoherence
     T1_us: float = 68.0
     Tphi_us: float = 89.0
-    p_heat: float = 0.0  # passive heating to |2>
+    p_heat_01: float = 0.0  # |0> -> |1> heating
+    p_heat_12: float = 0.0  # |1> -> |2> heating
     # Readout / reset (classical bit-flip rates)
     p_readout: float = 0.003
     p_reset: float = 0.003
@@ -66,6 +67,9 @@ class PaperAlignedNoiseModel:
     def _load_cfg(self, raw: Dict) -> PaperAlignedNoiseConfig:
         cfg = PaperAlignedNoiseConfig()
         for k, v in (raw or {}).items():
+            if k == "p_heat":
+                cfg.p_heat_12 = float(v)
+                continue
             if hasattr(cfg, k):
                 setattr(cfg, k, v)
         return cfg
@@ -74,8 +78,8 @@ class PaperAlignedNoiseModel:
         dt_us = self.cfg.cycle_ns / 1000.0
         K_amp_phase = amp_phase_kraus(dt_us, self.cfg.T1_us, self.cfg.Tphi_us)
         K = lift_qubit_to_qutrit(K_amp_phase)
-        if self.cfg.p_heat > 0:
-            heat = passive_heating_kraus(self.cfg.p_heat)
+        if self.cfg.p_heat_01 > 0 or self.cfg.p_heat_12 > 0:
+            heat = kraus_utils.kraus_leakage_heating(self.cfg.p_heat_01, self.cfg.p_heat_12)
             K = kraus_utils.combine_kraus_channels(K, heat)
         probs, leak = twirl_to_pauli_channel(K, 1)
         ptm = {

@@ -8,6 +8,9 @@
    ```bash
    pytest -q tests/test_iq_softxor.py
    ```
+   The `IQReadoutModel` now provides three-outcome probabilities `[p0, p1, pl]`,
+   and `soft_detection_sequence` returns both detection-event and per-round leakage
+   probabilities.
 3. **GPTA (1q/2q) Sanity**
    ```bash
    pytest -q tests/test_gpta.py

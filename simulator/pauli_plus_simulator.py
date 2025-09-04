@@ -37,13 +37,15 @@ from google_qec_paper_noise_model.gpta import twirl_to_pauli_channel
 from google_qec_paper_noise_model.gpt import amp_phase_kraus
 from google_qec_paper_noise_model.channels import (
     lift_qubit_to_qutrit,
-    passive_heating_kraus,
     dqlr_kraus,
     leakage_injection_kraus,     # kept for completeness
     cz_induced_leakage_kraus,    # new: two‑qutrit CZ‑leakage model
     leakage_transport_kraus,     # new: two‑qutrit leakage transport
 )
-from google_qec_paper_noise_model.kraus_utils import combine_kraus_channels
+from google_qec_paper_noise_model.kraus_utils import (
+    combine_kraus_channels,
+    kraus_leakage_heating,
+)
 
 
 ONE_Q_GATES = {
@@ -148,7 +150,8 @@ class PauliPlusSimulator:
         dt_us = cycle_ns / 1000.0
         T1_us = float(cfg.get("T1_us", 68.0))
         Tphi_us = float(cfg.get("Tphi_us", 89.0))
-        p_heat = float(cfg.get("p_heat", 0.0))
+        p_heat_01 = float(cfg.get("p_heat_01", 0.0))
+        p_heat_12 = float(cfg.get("p_heat_12", cfg.get("p_heat", 0.0)))
 
         p_readout = float(cfg.get("p_readout", 3e-3))
         p_reset = float(cfg.get("p_reset", 3e-3))
@@ -170,8 +173,8 @@ class PauliPlusSimulator:
         # Build single-qubit idle channel via Kraus ops and GPTA.
         K_amp = amp_phase_kraus(dt_us=dt_us, T1_us=T1_us, Tphi_us=Tphi_us)
         K = lift_qubit_to_qutrit(K_amp)
-        if p_heat > 0:
-            K = combine_kraus_channels(K, passive_heating_kraus(p_heat))
+        if p_heat_01 > 0 or p_heat_12 > 0:
+            K = combine_kraus_channels(K, kraus_leakage_heating(p_heat_01, p_heat_12))
         idle_probs, _ = twirl_to_pauli_channel(K, 1)
         px, py, pz = float(idle_probs[1]), float(idle_probs[2]), float(idle_probs[3])
         # Fold excess single-qubit errors evenly into XYZ.

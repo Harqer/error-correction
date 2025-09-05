@@ -13,6 +13,7 @@ Arguments
 --shots      : Monte-Carlo repetitions per circuit (default 1000)
 --out        : output filename; if omitted we write
                  samples_<exp_subdir_name>.npz  into the *same* folder
+--device     : torch device for soft-channel sampling (cpu, cuda, npu)
 """
 
 from pathlib import Path
@@ -37,6 +38,7 @@ def simulate_folder(
     shots: int = 1000,
     snr: float = 10.0,
     t: float   = 0.01,
+    device: str = "cpu",
 ) -> None:
     dm = DataManager()
     stim_files = list_stim_files(exp_dir)
@@ -52,7 +54,7 @@ def simulate_folder(
         det          = reshape_detectors(det_flat, stim_path, shots)  # (N,R,S,1)
 
         R, S         = extract_rounds_and_dets(stim_path)
-        post1, post2 = soft_channels(shots * R * S, snr, t)
+        post1, post2 = soft_channels(shots * R * S, snr, t, device=device)
         post1        = post1.reshape(shots, R, S, 1)
         post2        = post2.reshape(shots, R, S, 1)
 
@@ -75,6 +77,8 @@ if __name__ == "__main__":
                     help="Monte-Carlo shots per circuit (default 1000)")
     ap.add_argument("--out", type=Path, default=None,
                     help="Output .npz (default = <ROOT>/output/samples_<folder>.npz)")
+    ap.add_argument("--device", type=str, default="cpu",
+                    help="Torch device for soft-channel sampling (cpu, cuda, npu)")
     args = ap.parse_args()
 
     if not args.exp_dir.is_dir():
@@ -102,6 +106,7 @@ if __name__ == "__main__":
         exp_dir  = args.exp_dir,
         out_file = args.out,
         shots    = args.shots,
+        device   = args.device,
     )
     print("DONE →", args.out.resolve())
 

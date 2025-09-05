@@ -65,6 +65,15 @@ python generate_data.py --model paper_aligned --basis x --samples 10000
 
 生成的数据默认保存在 `output/` 目录。
 
+使用 `google_qec_simulator` 直接生成 `.npz` 噪声文件时，可通过 `--device` 指定
+计算设备，例如：
+
+```bash
+python google_qec_simulator/main.py path/to/exp --shots 10000 --device npu
+```
+
+在支持的硬件上选用 `--device npu`（或 `cuda`）可显著加速 soft 通道的采样过程。
+
 ### 2. 查看数据
 
 ```bash

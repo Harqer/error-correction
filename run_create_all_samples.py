@@ -1,7 +1,14 @@
 import os
 from pathlib import Path
+import argparse
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device", type=str, default="cpu",
+                        help="Torch device passed to google_qec_simulator")
+    parser.add_argument("--shots", type=int, default=10000,
+                        help="Monte-Carlo shots per circuit")
+    args = parser.parse_args()
     # Get the directory of the currently executing script (so it's portable)
     script_dir = Path(__file__).resolve().parent  # this will work whether on local machine or in Google Drive
     print(f"Script is running from: {script_dir}")
@@ -26,9 +33,12 @@ def main():
     for idx, npz_file in enumerate(npz_files, start=1):
         print(f"=== Running simulation {idx}/{len(npz_files)} ===")
         print(f"File: {npz_file}")
-        
+
         # Simulation command (example, adjust as needed)
-        command = f"python ./google_qec_simulator/main.py {npz_file} --shots 10000"
+        command = (
+            f"python ./google_qec_simulator/main.py {npz_file} "
+            f"--shots {args.shots} --device {args.device}"
+        )
         print(f"Command: {command}")
         
         # Run your simulation here (subprocess or another method)

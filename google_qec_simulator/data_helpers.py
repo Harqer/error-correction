@@ -1,5 +1,6 @@
 # google_qec_simulator/data_helpers.py
 import numpy as np
+import torch
 from pathlib import Path
 from stim_helpers import extract_rounds_and_dets
 
@@ -29,35 +30,53 @@ def reshape_detectors(det_flat: np.ndarray, stim_path: Path, shots: int) -> np.n
     return det_flat.reshape(shots, R, S, 1).astype(np.float32)
 
 
-def iq_sample(state, snr, t):
-    mu = state
-    z = np.random.normal(mu, 1 / np.sqrt(snr))
-    if state >= 1:
-        z -= t * np.random.exponential(1.0)
-    return z
+def soft_channels(n, snr=10.0, t=0.01, leak_p=0.00275, device: str = "cpu"):
+    """Vectorized soft-channel sampling that can run on CPU, GPU or NPU.
 
+    Parameters
+    ----------
+    n : int
+        Number of samples to draw.
+    snr : float
+        Signal-to-noise ratio of the readout channel.
+    t : float
+        Characteristic decay time used in the leakage model.
+    leak_p : float
+        Probability of preparing in the leakage state.
+    device : str
+        Torch device string (e.g. ``"cpu"``, ``"cuda"``, ``"npu"``).
 
-def pdfs(z, snr, t):
-    p0 = np.exp(-snr * z**2)
-    p1 = 0.5 * np.exp(-snr * (z - 1) ** 2) + 0.5 * np.exp(-snr * z**2) * np.exp(-z / t) * (z > 0)
-    p2 = 0.5 * np.exp(-snr * (z - 2) ** 2) + 0.5 * np.exp(-snr * (z - 1) ** 2) * np.exp(-(z - 1) / (2 * t)) * (z > 1)
-    return p0, p1, p2
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        Posterior probabilities for states 1 and 2.
+    """
 
+    dev = torch.device(device)
 
-def post(z, snr, t, priors=(0.495, 0.495, 0.01)):
-    w0, w1, w2 = priors
-    p0, p1, p2 = pdfs(z, snr, t)
+    # Sample physical states {0,1,2}
+    probs = torch.tensor([1 - leak_p - 0.5, 0.5, leak_p], device=dev)
+    states = torch.multinomial(probs, n, replacement=True)
+
+    # Sample IQ points with additive Gaussian noise and optional decay
+    std = 1 / torch.sqrt(torch.tensor(snr, device=dev))
+    z = torch.normal(states.float(), std)
+    mask = states >= 1
+    if mask.any():
+        z[mask] -= t * torch.empty(mask.sum(), device=dev).exponential_()
+
+    # Compute PDF values for the three hypotheses
+    p0 = torch.exp(-snr * z**2)
+    p1 = 0.5 * torch.exp(-snr * (z - 1) ** 2) + 0.5 * torch.exp(-snr * z**2) * torch.exp(-z / t) * (z > 0)
+    p2 = 0.5 * torch.exp(-snr * (z - 2) ** 2) + 0.5 * torch.exp(-snr * (z - 1) ** 2) * torch.exp(-(z - 1) / (2 * t)) * (z > 1)
+
+    # Convert PDFs to posterior probabilities with fixed priors
+    w0, w1, w2 = 0.495, 0.495, 0.01
     norm = w0 * p0 + w1 * p1 + w2 * p2
-    if norm == 0:
-        return 0.5, 0.0
-    return (w1 * p1) / norm, (w2 * p2) / norm
+    post1 = torch.where(norm == 0, torch.full_like(norm, 0.5), (w1 * p1) / norm)
+    post2 = torch.where(norm == 0, torch.zeros_like(norm), (w2 * p2) / norm)
 
-
-def soft_channels(n, snr=10.0, t=0.01, leak_p=0.00275):
-    states = np.random.choice([0, 1, 2], size=n, p=[1 - leak_p - 0.5, 0.5, leak_p])
-    zvals = np.vectorize(iq_sample)(states, snr, t)
-    post1, post2 = np.vectorize(post)(zvals, snr, t)
-    return post1.astype(np.float32), post2.astype(np.float32)
+    return post1.cpu().numpy().astype(np.float32), post2.cpu().numpy().astype(np.float32)
 
 
 

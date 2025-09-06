@@ -1,5 +1,5 @@
 import numpy as np
-from google_qec_paper_noise_model.pauli_plus import build_pauli_plus_channels
+from my_noise_model.pauli_plus import build_pauli_plus_channels
 
 
 def test_cz_leakage_included():

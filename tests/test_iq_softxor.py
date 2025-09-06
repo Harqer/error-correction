@@ -1,8 +1,8 @@
 import numpy as np
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from google_qec_paper_noise_model.iq_readout import IQReadoutModel
-from google_qec_paper_noise_model.softxor import soft_xor, soft_detection_sequence
+from my_noise_model.iq_readout import IQReadoutModel
+from my_noise_model.softxor import soft_xor, soft_detection_sequence
 
 def test_softxor_identity_cases():
     p = np.array([0.0, 0.25, 0.5, 0.75, 1.0])

@@ -121,7 +121,7 @@ python plot_alphaqubit_results.py --input results/metrics.json
 
 该实现还显式模拟了四能级泄漏传输（`|12⟩→|30⟩`, `|21⟩→|03⟩`）、顺序被动加热（`p_heat_01`, `p_heat_12`）以及三结果读出概率 `[p0, p1, pl]`，完整复现论文描述的噪声过程。
 
-这些参数在 `simulator.PauliPlusSimulator.apply_paper_aligned_noise` 中被消费，确保仿真噪声与论文方法保持一致。此 `paper_aligned` 模式**直接委托**到本仓库随附的 `google_qec_paper_noise_model` 实现，保证与论文方法 100% 一致。
+这些参数在 `simulator.PauliPlusSimulator.apply_paper_aligned_noise` 中被消费，确保仿真噪声与论文方法保持一致。此 `paper_aligned` 模式**直接委托**到本仓库随附的 `my_noise_model` 实现，保证与论文方法 100% 一致。
 
 ### 默认参数取值（来自论文 Table S4）
 

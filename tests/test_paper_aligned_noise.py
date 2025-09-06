@@ -12,7 +12,7 @@ import sys
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 import yaml
 import simulator.pauli_plus_simulator as ps
-from google_qec_paper_noise_model.paper_aligned import PaperAlignedNoiseModel
+from my_noise_model.paper_aligned import PaperAlignedNoiseModel
 
 
 def _build_sim():

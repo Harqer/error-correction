@@ -6,7 +6,6 @@ import numpy as np
 from simulator.dem_generator import generate_dem_data
 from simulator.si1000_generator import si1000_noise_model
 from simulator.pauli_plus_simulator import PauliPlusSimulator
-from simulator.paper_aligned_adapter import build_paper_aligned_circuit
 
 
 def main(model_type: str, num_samples: int, basis: str):
@@ -27,7 +26,8 @@ def main(model_type: str, num_samples: int, basis: str):
         sampler = sim.circuit.compile_detector_sampler()  # or however your class exposes it
         syndromes, logicals = sampler.sample(num_samples, separate_observables=True)
     elif model_type == "paper_aligned":
-        # Build the EXACT paper-aligned Pauli+ simulator circuit provided in this repo
+        # Delegate to the canonical paper implementation shipped in the repo.
+        from simulator.paper_aligned_adapter import build_paper_aligned_circuit
         circuit = build_paper_aligned_circuit(config, basis)
         sampler = circuit.compile_detector_sampler()
         syndromes, logicals = sampler.sample(num_samples, separate_observables=True)

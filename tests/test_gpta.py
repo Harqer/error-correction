@@ -1,8 +1,8 @@
 import numpy as np
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from google_qec_paper_noise_model.gpta import twirl_to_pauli_channel
-from google_qec_paper_noise_model.channels import amplitude_damping_kraus, dephasing_kraus, lift_qubit_to_qutrit
+from my_noise_model.gpta import twirl_to_pauli_channel
+from my_noise_model.channels import amplitude_damping_kraus, dephasing_kraus, lift_qubit_to_qutrit
 
 def test_twirl_1q_probs_valid():
     Ks = lift_qubit_to_qutrit(amplitude_damping_kraus(0.02) + dephasing_kraus(0.01))

@@ -70,6 +70,11 @@ class PaperAlignedNoiseModel:
             if k == "p_heat":
                 cfg.p_heat_12 = float(v)
                 continue
+            # Allow configs to explicitly set ``dqlr_matrix: null`` to use the
+            # dataclass default instead of passing ``None`` into downstream
+            # Kraus builders that expect a 3x3 matrix.
+            if k == "dqlr_matrix" and v is None:
+                continue
             if hasattr(cfg, k):
                 setattr(cfg, k, v)
         return cfg

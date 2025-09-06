@@ -33,16 +33,16 @@ from typing import Dict, List, Tuple
 
 import stim
 
-from google_qec_paper_noise_model.gpta import twirl_to_pauli_channel
-from google_qec_paper_noise_model.gpt import amp_phase_kraus
-from google_qec_paper_noise_model.channels import (
+from my_noise_model.gpta import twirl_to_pauli_channel
+from my_noise_model.gpt import amp_phase_kraus
+from my_noise_model.channels import (
     lift_qubit_to_qutrit,
     dqlr_kraus,
     leakage_injection_kraus,     # kept for completeness
     cz_induced_leakage_kraus,    # new: two‑qutrit CZ‑leakage model
     leakage_transport_kraus,     # new: two‑qutrit leakage transport
 )
-from google_qec_paper_noise_model.kraus_utils import (
+from my_noise_model.kraus_utils import (
     combine_kraus_channels,
     kraus_leakage_heating,
 )

@@ -4,7 +4,7 @@ Build a Stim circuit with a **paper-accurate** Pauli+ noise model:
  - CZ cross-talk -> correlated Pauli channels up to 4 qubits (paired concurrent CZs);
  - T1/T2 decoherence folded into gate/idle channels;
  - Readout/reset bit-flips retained for hard outcomes; **soft I/Q** is provided
-   by `google_qec_paper_noise_model.iq_readout.IQReadoutModel`.
+   by `my_noise_model.iq_readout.IQReadoutModel`.
 This mirrors Methods (Pauli+, cross-talk & leakage; soft I/Q with amplitude damping).
 """
 from pathlib import Path

@@ -12,6 +12,7 @@ from .iq_readout import IQReadoutModel
 from .softxor import soft_xor, soft_detection_sequence
 from .gpta import twirl_to_pauli_channel
 from .pauli_plus import build_pauli_plus_channels
+from .circuit_builder import build_paper_aligned_circuit
 
 __all__ = [
     "make_si1000_weights",
@@ -20,5 +21,6 @@ __all__ = [
     "soft_detection_sequence",
     "twirl_to_pauli_channel",
     "build_pauli_plus_channels",
+    "build_paper_aligned_circuit",
 ]
 

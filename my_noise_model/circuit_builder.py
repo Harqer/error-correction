@@ -8,7 +8,7 @@ Build a Stim circuit with a **paper-accurate** Pauli+ noise model:
 This mirrors Methods (Pauli+, cross-talk & leakage; soft I/Q with amplitude damping).
 """
 from pathlib import Path
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 import yaml
 import stim
 import numpy as np
@@ -215,6 +215,28 @@ class SurfaceCodeCircuitBuilder:
         # Flush any trailing tick’s cross-talk
         self._append_cross_talk_for_tick(noisy, current_tick_cz, p_xtalk)
         return noisy
+
+
+def build_paper_aligned_circuit(config: Dict[str, Any], basis: str) -> stim.Circuit:
+    """Builds a Stim circuit using :class:`SurfaceCodeCircuitBuilder`.
+
+    Parameters
+    ----------
+    config : Dict[str, Any]
+        Configuration dictionary that may contain ``distance``, ``rounds`` and
+        ``processor`` keys. Missing values fall back to small demonstrative
+        defaults.
+    basis : str
+        Logical basis (``'x'`` or ``'z'``) for the generated surface code
+        circuit.
+    """
+    distance = int(config.get("distance", 3))
+    rounds = int(config.get("rounds", 3))
+    processor = config.get("processor", "72_qubit_paper_aligned")
+    builder = SurfaceCodeCircuitBuilder(
+        distance=distance, rounds=rounds, basis=basis, processor=processor
+    )
+    return builder.build_circuit()
 
 
 if __name__ == '__main__':

@@ -23,7 +23,7 @@ python3.8 -m venv venv
 source venv/bin/activate
 # 安装依赖
 pip install --upgrade pip
-pip install numpy scipy stim pyyaml torch
+pip install numpy scipy stim pyyaml torch leakysim>=0.4.0
 
 # 如需在华为 Ascend NPU 上训练，请安装带有 `torch.npu` 的 PyTorch 发行版并根据官方文档完成驱动配置。
 ```

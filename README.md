@@ -23,7 +23,7 @@ python3.8 -m venv venv
 source venv/bin/activate
 # 安装依赖
 pip install --upgrade pip
-pip install numpy scipy stim pyyaml torch
+pip install numpy scipy stim pyyaml torch leakysim>=0.4.0
 
 # 如需在华为 Ascend NPU 上训练，请安装带有 `torch.npu` 的 PyTorch 发行版并根据官方文档完成驱动配置。
 ```
@@ -61,6 +61,19 @@ python generate_data.py --model paper_aligned --basis z --samples 10000
 # 或 X 基
 python generate_data.py --model paper_aligned --basis x --samples 10000
 # 使用 --basis 参数在 X 与 Z 基间切换
+```
+
+### 一键生成所有预训练噪声数据
+
+```bash
+# From within the repo root
+python make_all_pretraining_noise.py \
+  --dem-samples 500000 \
+  --si1000-samples 500000 \
+  --si1000-p-grid 0.006,0.010,0.014 \
+  --soft-shots 200000 \
+  --soft-device auto \
+  --out-dir pretrain_data
 ```
 
 生成的数据默认保存在 `output/` 目录。

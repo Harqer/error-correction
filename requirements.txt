@@ -3,7 +3,4 @@ scipy
 stim
 pyyaml
 torch
-tqdm
-matplotlib
-pytest
 leakysim>=0.4.0

@@ -10,7 +10,9 @@ from simulator.pauli_plus_simulator import PauliPlusSimulator
 
 def main(model_type: str, num_samples: int, basis: str):
     # Load configuration
-    config_path = os.path.join("configs", f"{model_type}.yaml")
+    # For paper-aligned, we explicitly load its documented config
+    cfg_name = f"{model_type}.yaml" if model_type != "paper_aligned" else "paper_aligned.yaml"
+    config_path = os.path.join("configs", cfg_name)
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
@@ -26,10 +28,9 @@ def main(model_type: str, num_samples: int, basis: str):
         sampler = sim.circuit.compile_detector_sampler()  # or however your class exposes it
         syndromes, logicals = sampler.sample(num_samples, separate_observables=True)
     elif model_type == "paper_aligned":
-        # Delegate to the canonical paper implementation shipped in the repo.
-        from simulator.paper_aligned_adapter import build_paper_aligned_circuit
-        circuit = build_paper_aligned_circuit(config, basis)
-        sampler = circuit.compile_detector_sampler()
+        # The PauliPlus simulator in paper-aligned mode maps config 1:1 to the paper’s physical noise
+        sim = PauliPlusSimulator(config, basis, mode="paper_aligned")
+        sampler = sim.circuit.compile_detector_sampler()
         syndromes, logicals = sampler.sample(num_samples, separate_observables=True)
     else:
         raise ValueError(f"Unknown model type: {model_type}")

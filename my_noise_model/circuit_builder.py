@@ -68,8 +68,9 @@ def _twirl_pauli_probs_2q_with_leakage(
     # Generalized Pauli twirling (qutrit levels) via leakysim.
     gpt = leakysim.generalized_pauli_twirling(ch, num_qubits=2, num_level=3)
 
-    comp = leakysim.LeakageStatus('COMP')
-    leak = leakysim.LeakageStatus('LEAK')
+    # leakysim represents leakage status as integer arrays; 0=COMP, 1=LEAK
+    comp = leakysim.LeakageStatus(status=[0, 0])
+    leak = leakysim.LeakageStatus(status=[1, 1])
     probs = []
     for pa in ['XI','YI','ZI','IX','IY','IZ','XX','XY','XZ','YX','YY','YZ','ZX','ZY','ZZ']:
         probs.append(gpt.get_prob_from_to(comp, comp, pa))

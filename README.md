@@ -63,6 +63,19 @@ python generate_data.py --model paper_aligned --basis x --samples 10000
 # 使用 --basis 参数在 X 与 Z 基间切换
 ```
 
+### 一键生成所有预训练噪声数据
+
+```bash
+# From within the repo root
+python make_all_pretraining_noise.py \
+  --dem-samples 500000 \
+  --si1000-samples 500000 \
+  --si1000-p-grid 0.006,0.010,0.014 \
+  --soft-shots 200000 \
+  --soft-device auto \
+  --out-dir pretrain_data
+```
+
 生成的数据默认保存在 `output/` 目录。
 
 使用 `google_qec_simulator` 直接生成 `.npz` 噪声文件时，可通过 `--device` 指定

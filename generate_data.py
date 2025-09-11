@@ -20,7 +20,12 @@ def main(model_type: str, num_samples: int, basis: str):
     if model_type == "dem":
         syndromes, logicals = generate_dem_data(num_samples, config)
     elif model_type == "si1000":
-        circuit = si1000_noise_model(config["p"])
+        # ``si1000_noise_model`` expects the full configuration dictionary so that
+        # parameters like distance and rounds can be overridden.  Passing only the
+        # error rate (``config['p']``) previously caused an ``AttributeError`` when
+        # the function attempted to access ``config.get``.  Forward the entire
+        # config object instead.
+        circuit = si1000_noise_model(config)
         sampler = circuit.compile_detector_sampler()
         syndromes, logicals = sampler.sample(num_samples, separate_observables=True)
     elif model_type == "pauli_plus":

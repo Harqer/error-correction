@@ -131,7 +131,7 @@ class ReadoutNetwork(nn.Module):
         return torch.stack(outputs)
 
 class AlphaQubitDecoder(nn.Module):
-    def __init__(self, num_features, hidden_dim, num_stabilizers, grid_size, num_heads=4, num_layers=3):
+    def __init__(self, num_features, hidden_dim, num_stabilizers, grid_size, num_heads=8, num_layers=12):
         super().__init__()
         self.embedder = StabilizerEmbedder(num_features, hidden_dim, num_stabilizers)
         self.transformer = SyndromeTransformer(hidden_dim, num_heads, num_layers, num_stabilizers, grid_size)
@@ -295,7 +295,7 @@ if __name__ == "__main__":
     
     print(f"Rounds={R} Stabilisers={S} Features={F} grid={d}×{d}")
     
-    model = AlphaQubitDecoder(F, 128, S, grid_size).to(device)
+    model = AlphaQubitDecoder(F, 256, S, grid_size, num_heads=8, num_layers=12).to(device)
     if dist.is_initialized():
         model = torch.nn.parallel.DistributedDataParallel(
             model,

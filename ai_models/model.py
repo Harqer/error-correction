@@ -259,7 +259,7 @@ class AlphaQubitDecoder(nn.Module):
     def __init__(self,
                  num_features, hidden_dim,
                  num_stabilizers, grid_size,
-                 num_heads=4, num_layers=3):
+                 num_heads=8, num_layers=12):
         super().__init__()
         self.embedder = StabilizerEmbedder(num_features, hidden_dim,
                                            num_stabilizers)
@@ -464,7 +464,7 @@ if __name__ == "__main__":
     d = int(math.sqrt(S+1)); grid_size = d-1
     print(f"Rounds={R}  Stabilisers={S}  Features={F}  grid={d}×{d}")
 
-    model = AlphaQubitDecoder(F, 128, S, grid_size)
+    model = AlphaQubitDecoder(F, 256, S, grid_size, num_heads=8, num_layers=12)
 
         # In your main code where you load the checkpoint:
     ckpt = "alphaqubit.pth"

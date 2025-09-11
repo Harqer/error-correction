@@ -3,4 +3,5 @@ scipy
 stim
 pyyaml
 torch
-leakysim>=0.4.0
+tqdm
+# leakysim>=0.4.0  # optional; real package required only for fine-tuning with physical noise

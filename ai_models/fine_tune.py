@@ -126,11 +126,11 @@ def train_on_folder(folder: str, args, device):
     # model dimensions from dataset
     model = AlphaQubitDecoder(
         num_features=2,
-        hidden_dim=128,
+        hidden_dim=256,
         num_stabilizers=ds.S_pad,
         grid_size=ds.grid_size,
-        num_heads=4,
-        num_layers=3,
+        num_heads=8,
+        num_layers=12,
     ).to(device)
     if args.npu and hasattr(torch, "npu"):
         npu_count = getattr(torch.npu, "device_count", lambda: 1)()

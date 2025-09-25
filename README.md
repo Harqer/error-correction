@@ -68,13 +68,15 @@ python generate_data.py --model paper_aligned --basis x --samples 10000
 ```bash
 # From within the repo root
 python make_all_pretraining_noise.py \
-  --dem-samples 500000 \
-  --si1000-samples 500000 \
-  --si1000-p-grid 0.006,0.010,0.014 \
-  --soft-shots 200000 \
+  --dem-samples 2500000 \
+  --si1000-samples 1500000 \
+  --si1000-p-grid 0.004,0.008,0.012,0.016 \
+  --soft-shots 4000000 \
   --soft-device auto \
   --out-dir pretrain_data
 ```
+
+上述命令基于一次性预备约 $8.5\times10^6$ 条离散综合样本（DEM $2.5$M + SI1000 四个 $p$ 点各 $1.5$M）以及每个 soft 电路 $4.0$M 次 IQ shots 的估算，足以覆盖默认 20 epoch 训练时约 $1.7\times10^8$ 个样本步，使 600 万参数的解码器平均获得 $\approx28$ 次梯度观测。该规模需要约 15 GB（布尔综合数据）+ 1.1 GB（soft shots）的存储空间；若资源受限，可按比例缩放所有 `--*-samples` 并保持不同噪声类型之间的相对比重。
 
 生成的数据默认保存在 `output/` 目录。
 
@@ -114,6 +116,8 @@ python ai_models/decode.py \
 ```
 
 解码结果（如逻辑错误率）将存于 `results/` 目录。
+
+> **提示**：用于测试与评估的数据应来自模型训练过程中未出现过的独立采样，以便可靠衡量泛化性能。
 
 ### 5. 绘制性能
 

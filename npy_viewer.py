@@ -1,6 +1,8 @@
 # stats.py
-import numpy as np
 import sys
+from pathlib import Path
+
+import numpy as np
 
 def main():
     if len(sys.argv) < 2:
@@ -8,11 +10,24 @@ def main():
         return
 
     file_path = sys.argv[1]
-    data = np.load(file_path)
+    path = Path(file_path)
+
+    if not path.exists():
+        print(f"Error: {file_path} does not exist.")
+        parent = path.parent if path.parent != Path("") else Path.cwd() / "output"
+        if parent.exists():
+            npy_files = sorted(parent.glob("*.npy"))
+            if npy_files:
+                print("\nAvailable .npy files:")
+                for candidate in npy_files:
+                    print(f"  - {candidate}")
+        return
+
+    data = np.load(path)
     
     # Basic stats
     print(f"\n{' File Info ':-^40}")
-    print(f"Path: {file_path}")
+    print(f"Path: {path}")
     print(f"Shape: {data.shape}")
     print(f"Dtype: {data.dtype}")
     print(f"Min/Mean/Max: {data.min()} / {data.mean():.2f} / {data.max()}")

@@ -89,8 +89,12 @@ python google_qec_simulator/main.py path/to/exp --shots 10000 --device npu
 
 ### 2. 查看数据
 
+生成的数据文件名会包含时间戳，例如 `output/dem_syndromes_z_20240229_101530.npy`。查看时可以先列出
+`output/` 目录下的 `.npy` 文件，再将其中一个路径传给 `npy_viewer.py`：
+
 ```bash
-python npy_viewer.py output/dem_samples.npy
+ls output/*.npy
+python npy_viewer.py output/dem_syndromes_z_20240229_101530.npy
 ```
 
 ### 3. 训练模型
@@ -106,7 +110,7 @@ python ai_models/train.py --config configs/dem.yaml
 ```bash
 python ai_models/decode.py \
   --model path/to/alphaqubit_model.pth \
-  --data output/dem_samples.npy
+  --data output/dem_syndromes_z_20240229_101530.npy
 ```
 
 解码结果（如逻辑错误率）将存于 `results/` 目录。

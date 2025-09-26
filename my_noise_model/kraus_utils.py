@@ -171,7 +171,7 @@ def combine_kraus_channels(
 
 
 def kraus_leakage_heating(p01: float, p12: float) -> list[np.ndarray]:
-    """三能级被动加热通道：依次执行 ``\|0⟩→\|1⟩`` 与 ``\|1⟩→\|2⟩``。"""
+    r"""三能级被动加热通道：依次执行 ``\|0⟩→\|1⟩`` 与 ``\|1⟩→\|2⟩``。"""
 
     p01 = float(p01)
     p12 = float(p12)
@@ -191,13 +191,13 @@ def kraus_leakage_heating(p01: float, p12: float) -> list[np.ndarray]:
 
 
 def kraus_heating_to_2(prob: float) -> list[np.ndarray]:
-    """兼容旧模型的便捷函数，仅保留 ``\|1⟩→\|2⟩`` 加热。"""
+    r"""兼容旧模型的便捷函数，仅保留 ``\|1⟩→\|2⟩`` 加热。"""
 
     return kraus_leakage_heating(0.0, prob)
 
 
 def kraus_cz_leakage(prob: float) -> list[np.ndarray]:
-    """CZ 门导致的 ``\|11⟩``→``\|02⟩/\|20⟩`` 泄漏通道。"""
+    r"""CZ 门导致的 ``\|11⟩``→``\|02⟩/\|20⟩`` 泄漏通道。"""
 
     p = float(prob)
     dim = 9

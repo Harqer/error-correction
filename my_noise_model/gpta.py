@@ -1,4 +1,4 @@
-"""gpta.py —— 广义 Pauli 托恩近似 (GPTA) 的矩阵实现细节。
+r"""gpta.py —— 广义 Pauli 托恩近似 (GPTA) 的矩阵实现细节。
 
 与 ``gpt.py`` 中的高层接口互补，这里提供对 Kraus 集投影、计算 Pauli 传输矩阵
 对角元、估计泄漏概率等底层线性代数操作。每个步骤都附有中文注释以说明其
@@ -53,7 +53,7 @@ def _project_2q_to_qubit(K: np.ndarray) -> np.ndarray:
 # --------
 
 def _avg_leakage_1q(Ks: List[np.ndarray]) -> float:
-    """估计单量子比特通道将 ``\|1⟩`` 泄漏至 ``\|2⟩`` 的平均概率。"""
+    r"""估计单量子比特通道将 ``\|1⟩`` 泄漏至 ``\|2⟩`` 的平均概率。"""
     rho1_3 = np.zeros((3, 3), complex); rho1_3[1, 1] = 1.0
     Ks3: List[np.ndarray] = []
     for K in Ks:

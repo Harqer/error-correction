@@ -29,7 +29,7 @@ def kron(*ops: np.ndarray) -> np.ndarray:
     return out
 
 def amplitude_damping_kraus(tau: float) -> List[np.ndarray]:
-    """单量子比特振幅阻尼通道。
+    r"""单量子比特振幅阻尼通道。
 
     ``tau`` 表示归一化的演化时间，阻尼强度 ``γ = 1 - e^{-tau}``。
     返回两个 Kraus 算符 ``K0`` 与 ``K1``，分别对应保持在计算子空间和
@@ -72,7 +72,7 @@ def depolarizing_2q_kraus(p: float) -> List[np.ndarray]:
     return K
 
 def leakage_injection_kraus(p: float) -> List[np.ndarray]:
-    """单 qutrit 泄漏注入通道。
+    r"""单 qutrit 泄漏注入通道。
 
     以概率 ``p`` 将 ``\|0⟩, \|1⟩, \|2⟩`` 全部泵浦到泄漏态 ``\|2⟩``，否则保持不变。
     Kraus 集满足 CPTP 条件：
@@ -98,7 +98,7 @@ def lift_qubit_to_qutrit(Ks_2x2: List[np.ndarray]) -> List[np.ndarray]:
     return out
 
 def cz_induced_leakage_kraus(p_leak: float) -> List[np.ndarray]:
-    """双四能级系统（两量子比特 + 泄漏态）的 CZ 诱导泄漏通道。
+    r"""双四能级系统（两量子比特 + 泄漏态）的 CZ 诱导泄漏通道。
 
     模拟 ``\|11⟩`` 态在 CZ 作用下转移到 ``\|02⟩`` 与 ``\|20⟩`` 的过程，每个分支
     概率 ``p_leak/2``。其余基态（包含泄漏运输需要的第四能级）保持不变。
@@ -121,7 +121,7 @@ def cz_induced_leakage_kraus(p_leak: float) -> List[np.ndarray]:
     return [K0, K1, K2]
 
 def leakage_transport_kraus(p_move: float) -> List[np.ndarray]:
-    """四能级泄漏迁移通道。
+    r"""四能级泄漏迁移通道。
 
     论文中描述了 ``\|12⟩``/``\|21⟩`` 泄漏态在泄漏管理脉冲作用下向另一量子比特
     迁移的过程：
@@ -154,7 +154,7 @@ def leakage_transport_kraus(p_move: float) -> List[np.ndarray]:
 
 
 def dqlr_kraus(p_matrix: List[List[float]]) -> List[np.ndarray]:
-    """生成 DQLR 复位过程的 Kraus 算符。
+    r"""生成 DQLR 复位过程的 Kraus 算符。
 
     ``p_matrix`` 为 3×3 转移矩阵，列索引 ``j`` 表示复位前的能级 ``\|j⟩``，行
     索引 ``i`` 表示复位后的目标能级 ``\|i⟩``。只要每一列概率和为 1，即可保
@@ -177,7 +177,7 @@ def spectator_crosstalk_z_kraus(p: float) -> List[np.ndarray]:
     return dephasing_kraus(p)
 
 def multi_level_reset_kraus(f_reset: float, rel_leak_after: float) -> List[np.ndarray]:
-    """三能级复位过程：以保真度 ``f_reset`` 复位到 ``\|0⟩``，并保留 ``rel_leak_after`` 泄漏。"""
+    r"""三能级复位过程：以保真度 ``f_reset`` 复位到 ``\|0⟩``，并保留 ``rel_leak_after`` 泄漏。"""
     f = float(f_reset)
     r = float(rel_leak_after)
     # Kraus mapping everything to |0> with prob f, and to |2> with small r,

@@ -1,4 +1,4 @@
-"""iq_readout.py —— 软测量 (I/Q) 似然与后验模型。
+r"""iq_readout.py —— 软测量 (I/Q) 似然与后验模型。
 
 根据论文方法，测量结果被视为一维高斯分布的 I/Q 样本：\|0⟩ 与 \|1⟩ 的均值由
 信噪比 (SNR) 决定，泄漏态使用宽而居中的分布。该文件提供后验概率计算、
@@ -26,7 +26,7 @@ class IQReadoutModel:
     leak_sigma_scale: float = 1.6
 
     def _means(self) -> Tuple[float, float]:
-        """根据 SNR 与阻尼时间常数计算 \|0⟩/\|1⟩ 高斯分布的均值。"""
+        r"""根据 SNR 与阻尼时间常数计算 \|0⟩/\|1⟩ 高斯分布的均值。"""
         mu = 0.5 * self.snr
         # amplitude damping collapses the |1> cloud toward |0|
         # We use alpha = exp(-tau) as the retained |1| amplitude component.

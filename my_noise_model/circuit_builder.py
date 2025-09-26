@@ -69,7 +69,7 @@ def _twirl_pauli_probs_2q_with_leakage(
     t2: float,
     p_cz_leak: float,
 ) -> Tuple[np.ndarray, float]:
-    """针对双量子比特通道执行广义 Pauli 托恩并返回泄漏概率。
+    r"""针对双量子比特通道执行广义 Pauli 托恩并返回泄漏概率。
 
     组合了以下物理机制：
 

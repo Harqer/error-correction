@@ -1,3 +1,9 @@
+"""gpta.py —— 广义 Pauli 托恩近似 (GPTA) 的矩阵实现细节。
+
+与 ``gpt.py`` 中的高层接口互补，这里提供对 Kraus 集投影、计算 Pauli 传输矩阵
+对角元、估计泄漏概率等底层线性代数操作。每个步骤都附有中文注释以说明其
+物理意义。"""
+
 from __future__ import annotations
 import numpy as np
 from typing import Dict, List, Tuple
@@ -12,6 +18,7 @@ Z = np.array([[1, 0], [0, -1]], dtype=complex)
 PAULI_1Q = [I, X, Y, Z]
 
 def _kron(*ops: np.ndarray) -> np.ndarray:
+    """多项克罗内克积的便捷函数，按顺序逐个扩展。"""
     out = np.array([[1.0 + 0j]])
     for op in ops:
         out = np.kron(out, op)
@@ -25,9 +32,11 @@ PAULI_2Q: List[np.ndarray] = [_kron(a, b) for a in PAULI_1Q for b in PAULI_1Q]
 # --------
 
 def _project_1q_to_qubit(K: np.ndarray) -> np.ndarray:
+    """将任意单量子比特 Kraus 算符投影到计算子空间。"""
     return K if K.shape[0] == 2 else K[:2, :2]
 
 def _project_2q_to_qubit(K: np.ndarray) -> np.ndarray:
+    """将含泄漏的双量子比特 Kraus 算符压缩回 4×4 计算子空间。"""
     if K.shape[0] == 4:
         return K
     dim = K.shape[0]
@@ -44,6 +53,7 @@ def _project_2q_to_qubit(K: np.ndarray) -> np.ndarray:
 # --------
 
 def _avg_leakage_1q(Ks: List[np.ndarray]) -> float:
+    """估计单量子比特通道将 ``\|1⟩`` 泄漏至 ``\|2⟩`` 的平均概率。"""
     rho1_3 = np.zeros((3, 3), complex); rho1_3[1, 1] = 1.0
     Ks3: List[np.ndarray] = []
     for K in Ks:
@@ -58,6 +68,7 @@ def _avg_leakage_1q(Ks: List[np.ndarray]) -> float:
     return float(np.real(E[2, 2]))
 
 def _avg_leakage_2q(Ks: List[np.ndarray]) -> float:
+    """估计双量子比特通道的泄漏概率，按四个计算基态平均。"""
     if all(K.shape[0] == 4 for K in Ks):
         return 0.0
     dim = Ks[0].shape[0]
@@ -81,6 +92,7 @@ def _avg_leakage_2q(Ks: List[np.ndarray]) -> float:
 # --------
 
 def _ptm_diag_from_kraus_1q(Ks: List[np.ndarray]) -> np.ndarray:
+    """计算单量子比特 Pauli 传输矩阵 (PTM) 的对角元。"""
     Ks2 = [_project_1q_to_qubit(K) for K in Ks]
     lam = np.zeros(4, dtype=float)
     for idx, P in enumerate(PAULI_1Q):
@@ -90,6 +102,7 @@ def _ptm_diag_from_kraus_1q(Ks: List[np.ndarray]) -> np.ndarray:
     return lam
 
 def _ptm_diag_from_kraus_2q(Ks: List[np.ndarray]) -> np.ndarray:
+    """计算双量子比特 PTM 对角元，考虑全部 16 个 Pauli 项。"""
     lam = np.zeros(16, dtype=float)
     for idx, P in enumerate(PAULI_2Q):
         EP = sum(K @ P @ K.conj().T for K in Ks)
@@ -98,16 +111,19 @@ def _ptm_diag_from_kraus_2q(Ks: List[np.ndarray]) -> np.ndarray:
     return lam
 
 def _hadamard4() -> np.ndarray:
+    """返回 4×4 Hadamard 矩阵，用于 PTM→概率 的基变换。"""
     return np.array([[1, 1, 1, 1],
                      [1, 1, -1, -1],
                      [1, -1, 1, -1],
                      [1, -1, -1, 1]], dtype=float)
 
 def _hadamard16() -> np.ndarray:
+    """返回 16×16 Hadamard 矩阵，等于 ``_hadamard4`` 的张量平方。"""
     H4 = _hadamard4()
     return np.kron(H4, H4)
 
 def _lam_to_probs_1q(lam: np.ndarray) -> np.ndarray:
+    """将 PTM 对角元转换为单量子比特 Pauli 概率并做规范化。"""
     H = _hadamard4()
     p = (H @ lam.reshape(4, 1)).ravel() / 4.0
     p[p < 0] = 0.0
@@ -115,6 +131,7 @@ def _lam_to_probs_1q(lam: np.ndarray) -> np.ndarray:
     return p / s if s > 0 else np.array([1, 0, 0, 0], float)
 
 def _lam_to_probs_2q(lam: np.ndarray) -> np.ndarray:
+    """将 PTM 对角元转换为双量子比特 Pauli 概率。"""
     H = _hadamard16()
     p = (H @ lam.reshape(16, 1)).ravel() / 16.0
     p[p < 0] = 0.0
@@ -126,6 +143,7 @@ def _lam_to_probs_2q(lam: np.ndarray) -> np.ndarray:
 # --------
 
 def twirl_to_pauli_channel(Ks: List[np.ndarray], n_qubits: int) -> Tuple[np.ndarray, np.ndarray]:
+    """对 1/2 量子比特通道执行 GPTA，返回 Pauli 概率与泄漏概率。"""
     if n_qubits == 1:
         lam = _ptm_diag_from_kraus_1q(Ks)
         probs = _lam_to_probs_1q(lam)

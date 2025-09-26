@@ -1,3 +1,8 @@
+"""pauli_plus.py —— 生成 Pauli+ 噪声表的核心函数。
+
+本模块根据 YAML/字典配置构造 GPTA 托恩后的 Pauli 概率与泄漏率，涵盖单比特、
+CZ、测量空闲、串扰及 DQLR 等物理机制。"""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Any, List, Tuple
@@ -15,6 +20,8 @@ from .gpta import twirl_to_pauli_channel
 
 @dataclass
 class PauliPlusParams:
+    """汇总 Pauli+ 噪声中用到的关键概率参数。"""
+
     oneq_excess: float
     cz_excess: float
     idle_during_meas: float
@@ -26,11 +33,7 @@ class PauliPlusParams:
     dqlr_rel_leak_after: float
 
 def build_pauli_plus_channels(params: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Build a dict of GPTA-twirled channels (as Pauli probability tables + leakage rates)
-    for use in a Pauli+ sampler. The keys are operation kinds present in the device-level
-    schedule: "1q", "2q_cz", "idle_meas", "meas_prep", "dqlr".
-    """
+    """根据输入参数构造 Pauli+ 噪声通道表。"""
     p = PauliPlusParams(
         oneq_excess = float(params["oneq_excess"]),
         cz_excess = float(params["cz_excess"]),

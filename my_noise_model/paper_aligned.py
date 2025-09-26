@@ -1,3 +1,9 @@
+"""paper_aligned.py —— 论文对齐的 Pauli+ 噪声高层封装。
+
+该模块将 `my_noise_model` 中的底层 Kraus/GPT 工具整合，构建与论文参数一致的
+噪声配置对象，并驱动 :class:`~simulator.pauli_plus_simulator.PauliPlusSimulator`
+完成电路“穿衣”。"""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Tuple
@@ -12,7 +18,7 @@ from . import kraus_utils
 
 @dataclass
 class PaperAlignedNoiseConfig:
-    """Noise parameters following the paper's methodology."""
+    """存储与论文一致的噪声参数。"""
 
     # Timing (ns)
     cycle_ns: float = 1100.0
@@ -42,7 +48,7 @@ class PaperAlignedNoiseConfig:
 
 
 class PaperAlignedNoiseModel:
-    """High-level facade applying paper-aligned noise to Pauli+ simulator."""
+    """高层封装：将论文噪声注入 PauliPlusSimulator。"""
 
     def __init__(self, config: Dict, basis: str = "z"):
         self.cfg = self._load_cfg(config)
@@ -65,6 +71,7 @@ class PaperAlignedNoiseModel:
         }
 
     def _load_cfg(self, raw: Dict) -> PaperAlignedNoiseConfig:
+        """将字典配置映射到 :class:`PaperAlignedNoiseConfig` 对象。"""
         cfg = PaperAlignedNoiseConfig()
         for k, v in (raw or {}).items():
             if k == "p_heat":
@@ -80,6 +87,7 @@ class PaperAlignedNoiseModel:
         return cfg
 
     def _build_idle_ptm(self) -> Tuple[Dict[str, float], float]:
+        """构造空闲段的 GPT 后 Pauli 传输矩阵与泄漏概率。"""
         dt_us = self.cfg.cycle_ns / 1000.0
         K_amp_phase = amp_phase_kraus(dt_us, self.cfg.T1_us, self.cfg.Tphi_us)
         K = lift_qubit_to_qutrit(K_amp_phase)
@@ -96,6 +104,7 @@ class PaperAlignedNoiseModel:
         return ptm, float(leak)
 
     def _build_dqlr_ptm(self) -> Tuple[Dict[str, float], float]:
+        """基于 DQLR Kraus 集计算等效 Pauli 概率与泄漏。"""
         Ks = dqlr_kraus(self.cfg.dqlr_matrix)
         probs, leak = twirl_to_pauli_channel(Ks, 1)
         ptm = {
@@ -107,6 +116,6 @@ class PaperAlignedNoiseModel:
         return ptm, float(leak)
 
     def sample(self, num_samples: int):
-        """Sample using the underlying simulator."""
+        """调用底层模拟器采样 ``num_samples`` 次检测事件。"""
         sampler = self.sim.circuit.compile_detector_sampler()
         return sampler.sample(num_samples, separate_observables=True)

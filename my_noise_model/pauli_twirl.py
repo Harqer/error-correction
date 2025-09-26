@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Pauli Twirling for Quantum Channels, including Generalized Twirling for
-channels with leakage.
-
-This module implements the conversion of a quantum channel into a stochastic
-Pauli channel. The primary method uses the Pauli Transfer Matrix (PTM).
-"""
+"""pauli_twirl.py —— 将 Kraus 通道转换为（广义）Pauli 通道的工具。"""
 from typing import Literal
 import numpy as np
 from . import kraus_utils
@@ -25,7 +19,7 @@ PAULI_2Q_BASIS = [
 
 
 def _choi_from_kraus(kraus_ops: list[np.ndarray]) -> np.ndarray:
-    """Computes the Choi matrix for a quantum channel."""
+    """从 Kraus 集计算 Choi 矩阵。"""
     d = kraus_ops[0].shape[0]
     choi = np.zeros((d**2, d**2), dtype=complex)
     for k in kraus_ops:
@@ -35,7 +29,7 @@ def _choi_from_kraus(kraus_ops: list[np.ndarray]) -> np.ndarray:
 
 
 def _ptm_from_choi(choi: np.ndarray, basis: list[np.ndarray]) -> np.ndarray:
-    """Computes the Pauli Transfer Matrix (PTM) from a Choi matrix."""
+    """根据给定的 Pauli 基从 Choi 矩阵提取 Pauli 传输矩阵。"""
     d_sq = len(basis)
     d = int(np.sqrt(d_sq))
     ptm = np.zeros((d_sq, d_sq), dtype=float)
@@ -53,12 +47,7 @@ def twirl_to_pauli_probs(
     n_qubits: int,
     method: Literal["ptm"] = "ptm",
 ) -> np.ndarray:
-    """Return Pauli error probabilities for a qubit channel.
-
-    The returned vector contains the probabilities of the non-identity Pauli
-    operators after twirling.  The sum of the probabilities equals the total
-    error rate of the channel.
-    """
+    """对 1/2 量子比特通道执行标准 Pauli 托恩并返回错误概率。"""
     if n_qubits not in [1, 2]:
         raise NotImplementedError("Only 1 and 2 qubit channels are supported.")
 
@@ -82,12 +71,7 @@ def twirl_to_pauli_probs(
 def twirl_to_generalized_pauli_probs(
     kraus_ops: list[np.ndarray], n_qutrits: int
 ) -> dict[str, float]:
-    """Generalized Pauli Twirling via ``leakysim``.
-
-    This delegates the heavy lifting to ``leakysim``'s reference implementation
-    and extracts the probabilities for Pauli errors that keep the system within
-    the computational subspace.
-    """
+    """调用 ``leakysim`` 执行广义 Pauli 托恩并返回计算子空间内的概率。"""
 
     if n_qutrits not in [1, 2]:
         raise NotImplementedError("Only 1 and 2-qutrit twirling is implemented.")

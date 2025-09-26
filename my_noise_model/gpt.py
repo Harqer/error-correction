@@ -1,6 +1,9 @@
-# 1-qubit Pauli matrices
- 
- 
+"""gpt.py —— 广义 Pauli 托恩 (GPT) 的核心实现。
+
+广义 Pauli 托恩是论文中将任意噪声通道映射为 Pauli（含泄漏分支）通道的关键
+步骤。通过先构造 Kraus 表示，再转换为 Choi 矩阵并在 Pauli 群上平均，可以
+得到便于 Clifford 仿真的等效噪声模型。本文件详细注释各个线性代数步骤。"""
+
 from __future__ import annotations
 import math
 import numpy as np
@@ -10,7 +13,7 @@ from .gpta import twirl_to_pauli_channel
 
 
 def amp_phase_kraus(*, dt_us: float, T1_us: float, Tphi_us: float) -> List[np.ndarray]:
-    """Return Kraus ops for amplitude+phase damping over a time step."""
+    """旧版接口：返回给定时间步的振幅+相位阻尼 Kraus 集。"""
     # amplitude damping strength parameter (tau)
     tau = dt_us / T1_us
     K_amp = amplitude_damping_kraus(tau)
@@ -26,7 +29,7 @@ def amp_phase_kraus(*, dt_us: float, T1_us: float, Tphi_us: float) -> List[np.nd
 
 
 def gpt_single_qubit(Ks: List[np.ndarray]) -> Dict[str, float]:
-    """Twirl a 1-qubit channel to Pauli probabilities."""
+    """旧版接口：调用 :func:`twirl_to_pauli_channel` 获取 Pauli 概率。"""
     probs, _ = twirl_to_pauli_channel(Ks, 1)
     return {"I": float(probs[0]), "X": float(probs[1]), "Y": float(probs[2]), "Z": float(probs[3])}
 
@@ -61,16 +64,17 @@ PAULI_1Q = {
  
 
 def amp_phase_kraus(dt_us: float, T1_us: float, Tphi_us: float) -> List[np.ndarray]:
-    """Helper: compose amplitude damping(T1) then pure dephasing(Tphi) over dt_us.
+    """在时间步 ``dt_us`` 内组合振幅阻尼 (T₁) 与纯退相干 (Tφ) 的 Kraus 集。
 
-    Args:
-        dt_us: Duration of the noise in microseconds.
-        T1_us: Amplitude damping time constant in microseconds.
-        Tphi_us: Pure dephasing time constant in microseconds.
+    参数
+    ----
+    dt_us: float
+        演化时间，单位微秒。
+    T1_us, Tphi_us: float
+        分别为振幅阻尼与纯退相干的时间常数。
 
-    Returns:
-        List of Kraus operators describing the combined channel.
-    """
+    先构造振幅阻尼的 Kraus 算符 ``K0,K1``，再与纯退相干的 ``D0,D1`` 做矩阵乘积，
+    得到所有可能的噪声路径 ``D·K``。"""
     gamma = 1.0 - np.exp(-dt_us / max(T1_us, 1e-12))
     lam = 1.0 - np.exp(-dt_us / max(Tphi_us, 1e-12))
     # Amplitude damping Kraus operators
@@ -84,7 +88,7 @@ def amp_phase_kraus(dt_us: float, T1_us: float, Tphi_us: float) -> List[np.ndarr
 
 
 def _kraus_to_choi(kraus_ops: Iterable[np.ndarray]) -> np.ndarray:
-    """Compute the Choi matrix from a collection of Kraus operators."""
+    """将 Kraus 集转换为 Choi 矩阵，便于执行托恩和提取概率。"""
     choi = np.zeros((4, 4), dtype=complex)
     for K in kraus_ops:
         choi += np.kron(K, K.conj())
@@ -92,14 +96,7 @@ def _kraus_to_choi(kraus_ops: Iterable[np.ndarray]) -> np.ndarray:
 
 
 def gpt_single_qubit(kraus_ops: Iterable[np.ndarray]) -> Dict[str, float]:
-    """Return Pauli error probabilities for a single-qubit channel.
-
-    Args:
-        kraus_ops: Iterable of 2x2 Kraus operators describing the channel.
-
-    Returns:
-        Dictionary mapping 'I','X','Y','Z' to probabilities summing to 1.
-    """
+    """对单量子比特通道执行 GPT，返回 Pauli 概率。"""
     choi = _kraus_to_choi(kraus_ops)
     probs: Dict[str, float] = {}
     for label, P in PAULI_1Q.items():
@@ -107,7 +104,7 @@ def gpt_single_qubit(kraus_ops: Iterable[np.ndarray]) -> Dict[str, float]:
         probs[label] = float(np.real(np.trace(choi @ v)))
  
 def _kraus_to_choi(kraus_ops: Iterable[np.ndarray]) -> np.ndarray:
-    """Return Choi matrix of a CPTP channel from its Kraus operators."""
+    """（冗余实现）通过 ``vec`` 运算构造 Choi 矩阵，保留是为文献对照。"""
     choi = None
     for K in kraus_ops:
         v = np.kron(K, np.eye(K.shape[0]))
@@ -117,7 +114,7 @@ def _kraus_to_choi(kraus_ops: Iterable[np.ndarray]) -> np.ndarray:
     return choi
 
 def _twirl_choi_1q(choi: np.ndarray) -> np.ndarray:
-    """Pauli twirl a 1-qubit Choi matrix."""
+    """在 Pauli 群上对单量子比特 Choi 矩阵做平均，得到对角化形式。"""
     twirled = np.zeros_like(choi, dtype=complex)
  
     # P(E)(ρ) = (1/4) Σ_P P† E(P ρ P†) P  -> Choi mapping by conjugation
@@ -128,11 +125,7 @@ def _twirl_choi_1q(choi: np.ndarray) -> np.ndarray:
     return twirled / 4.0
 
 def _pauli_probs_from_twirled_choi_1q(choi: np.ndarray) -> Dict[str, float]:
- 
-    """
-    Extract diagonal Pauli transfer probabilities from a 1-qubit *twirled* Choi matrix.
-    Returns probabilities for I, X, Y, Z that sum to 1 (on the computational subspace).
-    """
+    """从托恩后的 Choi 矩阵中提取 Pauli 传输概率。"""
     # Pauli transfer matrix entry R_{ab} = Tr[ (Pauli_a \otimes Pauli_b^T) Choi ] / 2
     R = {}
     labels = ["I", "X", "Y", "Z"]
@@ -165,11 +158,7 @@ def _pauli_probs_from_twirled_choi_1q(choi: np.ndarray) -> Dict[str, float]:
  
 
 def gpt_single_qubit(kraus_ops: Iterable[np.ndarray]) -> Dict[str, float]:
-    """
-    Apply GPT (Pauli twirl) to a general 1-qubit channel given by Kraus ops.
-    Returns a dict of Pauli probabilities on the computational subspace.
-    Leakage should be modeled by a separate classical branch (see paper_aligned.py).
-    """
+    """执行完整的 GPT 流程：Kraus → Choi → 托恩 → Pauli 概率。"""
     choi = _kraus_to_choi(list(kraus_ops))
     twirled = _twirl_choi_1q(choi)
     return _pauli_probs_from_twirled_choi_1q(twirled)

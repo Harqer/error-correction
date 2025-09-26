@@ -1,3 +1,9 @@
+"""iq_readout.py —— 软测量 (I/Q) 似然与后验模型。
+
+根据论文方法，测量结果被视为一维高斯分布的 I/Q 样本：\|0⟩ 与 \|1⟩ 的均值由
+信噪比 (SNR) 决定，泄漏态使用宽而居中的分布。该文件提供后验概率计算、
+软检测器等功能，并附有中文注释解释物理含义。"""
+
 import math
 from dataclasses import dataclass
 from typing import Tuple, Dict
@@ -5,21 +11,13 @@ from typing import Tuple, Dict
 import numpy as np
 
 def _gauss_pdf(x: np.ndarray, mu: float, sigma: float) -> np.ndarray:
+    """标准高斯密度函数，返回 ``N(mu, sigma^2)`` 在 ``x`` 处的值。"""
     z = (x - mu) / sigma
     return np.exp(-0.5 * z * z) / (math.sqrt(2.0 * math.pi) * sigma)
 
 @dataclass
 class IQReadoutModel:
-    """
-    Implements the paper's 1D I/Q readout likelihoods and posteriors.
-    - SNR sets separation of |0> and |1> Gaussian means (mu = SNR/2).
-    - tau = t/T1 controls amplitude-damping that collapses |1| toward |0|.
-    - Leakage 'L' uses a broad, near-centered distribution to reflect loss of contrast.
-    - Returns *soft posteriors* P(s | x) for s in {0,1,L}.
-    - Provides soft detection-event conversion via SoftXOR (see softxor.py).
-
-    This follows the Methods description (soft inputs for measurements and detection events).
-    """
+    """一维 I/Q 读出模型，输出 {0,1,L} 的后验概率。"""
     snr: float
     tau: float
     # Prior probability of leakage for the measurement under consideration.
@@ -28,6 +26,7 @@ class IQReadoutModel:
     leak_sigma_scale: float = 1.6
 
     def _means(self) -> Tuple[float, float]:
+        """根据 SNR 与阻尼时间常数计算 \|0⟩/\|1⟩ 高斯分布的均值。"""
         mu = 0.5 * self.snr
         # amplitude damping collapses the |1> cloud toward |0|
         # We use alpha = exp(-tau) as the retained |1| amplitude component.
@@ -37,7 +36,7 @@ class IQReadoutModel:
         return mu0, mu1
 
     def posteriors(self, x: np.ndarray) -> Dict[str, np.ndarray]:
-        """Return dict with keys 'p0','p1','pl' as posteriors given scalar or array x."""
+        """给定观测 ``x``（标量或数组），返回三种状态的后验概率。"""
         x = np.asarray(x, dtype=float)
         mu0, mu1 = self._means()
         s = self.sigma
@@ -60,24 +59,21 @@ class IQReadoutModel:
         }
 
     def soft_meas_probs(self, x: np.ndarray) -> np.ndarray:
-        """Return soft measurement probabilities [p0, p1, pl] for each sample."""
+        """以矩阵形式返回软测量概率 ``[p0, p1, pl]``。"""
         post = self.posteriors(x)
         return np.stack([post["p0"], post["p1"], post["pl"]], axis=-1)
 
     def soft_meas_prob1(self, x: np.ndarray) -> np.ndarray:
-        """Backward-compatibility helper returning only P(m=1)."""
+        """兼容旧接口，仅返回 ``P(m=1)``。"""
         return self.soft_meas_probs(x)[..., 1]
 
     def soft_vector(self, x: np.ndarray) -> np.ndarray:
-        """Alias of soft_meas_probs for historic callers."""
+        """``soft_meas_probs`` 的别名，方便旧代码调用。"""
         return self.soft_meas_probs(x)
 
     # Convenience generators for synthetic I/Q samples (useful for tests)
     def sample_states(self, n: int, rng: np.random.Generator) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Draw (state_labels, samples) where state_labels in {0,1,2} (2=leak).
-        Priors match those used in 'posteriors'.
-        """
+        """根据先验采样状态标签与对应的高斯 I/Q 样本。"""
         piL = float(self.p_leak_prior)
         pi0 = 0.5 * (1.0 - piL)
         pi1 = 0.5 * (1.0 - piL)

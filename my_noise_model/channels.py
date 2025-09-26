@@ -1,8 +1,16 @@
+"""channels.py —— Kraus 通道构建工具。
+
+本文件提供多种 1Q/2Q/多能级噪声通道的 Kraus 表达，用于在 Pauli+ 模型中
+描述 T₁/T₂ 弛豫、去极化、泄漏注入、泄漏运输、DQLR 复位等物理机制。所有
+函数均返回满足 CPTP 条件的 Kraus 集，并在注释中详细说明其物理含义。
+"""
+
 from __future__ import annotations
 import numpy as np
 from typing import List, Tuple
 
 def _pauli(name: str) -> np.ndarray:
+    """返回指定 Pauli 算符的矩阵表示。"""
     if name == "I":
         return np.array([[1, 0],[0, 1]], dtype=complex)
     if name == "X":
@@ -14,13 +22,18 @@ def _pauli(name: str) -> np.ndarray:
     raise ValueError(name)
 
 def kron(*ops: np.ndarray) -> np.ndarray:
+    """连乘克罗内克积，用于构造多体 Kraus 算符。"""
     out = np.array([[1.0+0j]])
     for op in ops:
         out = np.kron(out, op)
     return out
 
 def amplitude_damping_kraus(tau: float) -> List[np.ndarray]:
-    """Single-qubit amplitude damping with strength gamma = 1 - exp(-tau)."""
+    """单量子比特振幅阻尼通道。
+
+    ``tau`` 表示归一化的演化时间，阻尼强度 ``γ = 1 - e^{-tau}``。
+    返回两个 Kraus 算符 ``K0`` 与 ``K1``，分别对应保持在计算子空间和
+    ``\|1⟩→\|0⟩`` 跃迁。"""
     gamma = 1.0 - np.exp(-float(tau))
     g = float(gamma)
     K0 = np.array([[1, 0],[0, np.sqrt(1-g)]], dtype=complex)
@@ -28,14 +41,14 @@ def amplitude_damping_kraus(tau: float) -> List[np.ndarray]:
     return [K0, K1]
 
 def dephasing_kraus(p: float) -> List[np.ndarray]:
-    """Single-qubit dephasing channel."""
+    """单量子比特纯退相干通道，概率 ``p`` 施加 Z 相位翻转。"""
     p = float(p)
     K0 = np.sqrt(1.0 - p) * _pauli("I")
     K1 = np.sqrt(p) * _pauli("Z")
     return [K0, K1]
 
 def depolarizing_1q_kraus(p: float) -> List[np.ndarray]:
-    """Single-qubit depolarizing channel."""
+    """单量子比特去极化通道，总错误概率为 ``p``。"""
     p = float(p)
     K = [np.sqrt(1.0 - p) * _pauli("I")]
     for name in ("X","Y","Z"):
@@ -43,7 +56,7 @@ def depolarizing_1q_kraus(p: float) -> List[np.ndarray]:
     return K
 
 def depolarizing_2q_kraus(p: float) -> List[np.ndarray]:
-    """Two-qubit depolarizing channel with total error probability p."""
+    """双量子比特去极化通道，总错误概率为 ``p``。"""
     p = float(p)
     I = _pauli("I"); X=_pauli("X"); Y=_pauli("Y"); Z=_pauli("Z")
     paulis = [I,X,Y,Z]
@@ -59,13 +72,12 @@ def depolarizing_2q_kraus(p: float) -> List[np.ndarray]:
     return K
 
 def leakage_injection_kraus(p: float) -> List[np.ndarray]:
-    """
-    Single-qutrit leakage injection: with prob p, map |0>,|1>,|2> -> |2|;
-    otherwise identity. Kraus set (trace-preserving).
-      K0 = sqrt(1-p) * I_3
-      K1 = sqrt(p) |2><0|
-      K2 = sqrt(p) |2><1|
-      K3 = sqrt(p) |2><2|
+    """单 qutrit 泄漏注入通道。
+
+    以概率 ``p`` 将 ``\|0⟩, \|1⟩, \|2⟩`` 全部泵浦到泄漏态 ``\|2⟩``，否则保持不变。
+    Kraus 集满足 CPTP 条件：
+
+    ``K0 = √(1-p)·I₃``，``K1 = √p·|2⟩⟨0|``，``K2 = √p·|2⟩⟨1|``，``K3 = √p·|2⟩⟨2|``。
     """
     p = float(p)
     I3 = np.eye(3, dtype=complex)
@@ -76,7 +88,7 @@ def leakage_injection_kraus(p: float) -> List[np.ndarray]:
     return [K0, K1, K2, K3]
 
 def lift_qubit_to_qutrit(Ks_2x2: List[np.ndarray]) -> List[np.ndarray]:
-    """Embed 2x2 Kraus ops into 3x3 by acting on {|0>,|1>} and keeping |2> fixed."""
+    """将 2×2 Kraus 算符嵌入到含泄漏态的 3×3 空间。"""
     out = []
     for K in Ks_2x2:
         K3 = np.zeros((3,3), complex)
@@ -86,12 +98,10 @@ def lift_qubit_to_qutrit(Ks_2x2: List[np.ndarray]) -> List[np.ndarray]:
     return out
 
 def cz_induced_leakage_kraus(p_leak: float) -> List[np.ndarray]:
-    """Two-ququart CZ-induced leakage channel.
+    """双四能级系统（两量子比特 + 泄漏态）的 CZ 诱导泄漏通道。
 
-    Models the dephasing-driven processes ``|11> -> |02>`` and ``|11> -> |20>``
-    each occurring with probability ``p_leak/2``.  All other basis states,
-    including those involving the fourth level used by leakage transport, are
-    left unaffected.
+    模拟 ``\|11⟩`` 态在 CZ 作用下转移到 ``\|02⟩`` 与 ``\|20⟩`` 的过程，每个分支
+    概率 ``p_leak/2``。其余基态（包含泄漏运输需要的第四能级）保持不变。
     """
 
     p = float(p_leak)
@@ -111,18 +121,15 @@ def cz_induced_leakage_kraus(p_leak: float) -> List[np.ndarray]:
     return [K0, K1, K2]
 
 def leakage_transport_kraus(p_move: float) -> List[np.ndarray]:
-    """Four-level leakage transport channel.
+    """四能级泄漏迁移通道。
 
-    The paper describes a stochastic process where population in ``|12>`` (or
-    ``|21>``) is transferred to the opposite qubit while the partner is reset to
-    ``|0>``.  This is modelled explicitly in a two-ququart (four-level)
-    Hilbert space with the transitions
+    论文中描述了 ``\|12⟩``/``\|21⟩`` 泄漏态在泄漏管理脉冲作用下向另一量子比特
+    迁移的过程：
 
-    - ``|12> → |30>`` with probability ``p_move``
-    - ``|21> → |03>`` with probability ``p_move``
+    - ``\|12⟩ → \|30⟩``，概率 ``p_move``；
+    - ``\|21⟩ → \|03⟩``，概率 ``p_move``。
 
-    All other basis states are left unchanged.  The channel is trace preserving
-    and reduces to identity when ``p_move = 0``.
+    其他基态保持不变。当 ``p_move = 0`` 时退化为恒等映射。
     """
 
     p = float(p_move)
@@ -147,13 +154,11 @@ def leakage_transport_kraus(p_move: float) -> List[np.ndarray]:
 
 
 def dqlr_kraus(p_matrix: List[List[float]]) -> List[np.ndarray]:
-    """Kraus operators for an imperfect DQLR reset channel.
+    """生成 DQLR 复位过程的 Kraus 算符。
 
-    ``p_matrix`` is a 3x3 matrix where element ``p_matrix[i][j]`` gives the
-    probability of resetting from state ``|j>`` to ``|i>``.  The resulting Kraus
-    operators satisfy ``sum_i K_i† K_i = I`` provided each column of
-    ``p_matrix`` sums to 1.
-    """
+    ``p_matrix`` 为 3×3 转移矩阵，列索引 ``j`` 表示复位前的能级 ``\|j⟩``，行
+    索引 ``i`` 表示复位后的目标能级 ``\|i⟩``。只要每一列概率和为 1，即可保
+    证生成的 Kraus 集满足 CPTP。"""
 
     P = np.array(p_matrix, dtype=float)
     Ks: List[np.ndarray] = []
@@ -168,16 +173,11 @@ def dqlr_kraus(p_matrix: List[List[float]]) -> List[np.ndarray]:
     return Ks
 
 def spectator_crosstalk_z_kraus(p: float) -> List[np.ndarray]:
-    """
-    Single-qubit Z-phase kick used to model spectator crosstalk during parallel CZs.
-    """
+    """用于模拟并行 CZ 引起观测者串扰的单量子比特 Z 相位噪声。"""
     return dephasing_kraus(p)
 
 def multi_level_reset_kraus(f_reset: float, rel_leak_after: float) -> List[np.ndarray]:
-    """
-    DQLR: reset {|0>,|1>,|2>} -> |0> with fidelity f_reset, leaving a small
-    residual leakage probability rel_leak_after on |2>.
-    """
+    """三能级复位过程：以保真度 ``f_reset`` 复位到 ``\|0⟩``，并保留 ``rel_leak_after`` 泄漏。"""
     f = float(f_reset)
     r = float(rel_leak_after)
     # Kraus mapping everything to |0> with prob f, and to |2> with small r,

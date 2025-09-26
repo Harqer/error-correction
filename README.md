@@ -160,6 +160,38 @@ python plot_alphaqubit_results.py --input results/metrics.json
 | `p_cz_excess` | `2.75e-3` | 其余 CZ 误差以匹配 $3.5\times10^{-3}$ 总误差 |
 | `p_1q_excess` | `6.2e-4` | 单量子比特门误差 |
 
+## `my_noise_model` 物理方法详解
+
+为便于复现与二次开发，这里补充 `my_noise_model/` 目录中主要模块的物理含义与
+相互关系：
+
+- **`circuit_builder.py`**：在 Stim 生成的表面码理想电路上逐层“穿衣”，把 T₁/T₂
+  弛豫、去极化、CZ 串扰、泄漏与读出复位误差全部转化为 Pauli 通道，并借助
+  `leakysim` 实现广义 Pauli 托恩 (GPT)。同时暴露软测量模型，便于在生成数据时
+  联合采样离散/连续噪声。【F:my_noise_model/circuit_builder.py†L1-L210】
+- **`channels.py` 与 `kraus_utils.py`**：提供超导器件各类噪声过程的 Kraus 表示，
+  如振幅阻尼、纯退相干、去极化、CZ 诱导泄漏、泄漏运输、被动加热与 DQLR
+  复位。所有函数都遵循论文中的参数化方式，确保可组合成合法的 CPTP 通道。
+  【F:my_noise_model/channels.py†L1-L176】【F:my_noise_model/kraus_utils.py†L1-L274】
+- **`gpt.py` 与 `gpta.py`**：实现 GPT 的线性代数细节，包括 Kraus→Choi→Pauli
+  概率的转换、Pauli 传输矩阵对角化、泄漏概率估计等，使任意噪声通道都能以
+  Pauli 概率表表示。【F:my_noise_model/gpt.py†L1-L196】【F:my_noise_model/gpta.py†L1-L210】
+- **`pauli_twirl.py`**：给出标准/广义 Pauli 托恩的实现，既支持纯量子比特的 PTM
+  方法，也支持调用 `leakysim` 获取含泄漏的广义通道概率。【F:my_noise_model/pauli_twirl.py†L1-L109】
+- **`pauli_plus.py`**：综合前述工具，根据 YAML 配置产出 Pauli+ 噪声表（Pauli
+  概率 + 泄漏率），用于论文中的采样器与模拟器。【F:my_noise_model/pauli_plus.py†L1-L106】
+- **`paper_aligned.py`**：封装论文 SI 的完整噪声流程，自动将配置映射到
+  :class:`PauliPlusSimulator` 并预计算空闲/复位等通道的 GPT 结果。
+  【F:my_noise_model/paper_aligned.py†L1-L109】
+- **`iq_readout.py` 与 `softxor.py`**：构建软 I/Q 读出模型与软检测器组合规则，
+  支持在泄漏存在时输出三结果后验概率并生成连续测量数据。
+  【F:my_noise_model/iq_readout.py†L1-L102】【F:my_noise_model/softxor.py†L1-L33】
+- **`si1000.py`**：提供 SI1000 去极化模型的精确权重，可与 Pauli+ 噪声互补使用。
+  【F:my_noise_model/si1000.py†L1-L30】
+
+这些模块共同构成了仓库的物理噪声基线，可直接套用或按需替换某一环节，以
+研究不同噪声源对表面码性能的影响。
+
 ## 全流程示例：从噪声文件生成到 NPU 上的全规模训练
 
 1. **生成噪声样本**  

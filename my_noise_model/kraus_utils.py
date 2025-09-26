@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-A library of common quantum channels (Kraus operators).
+"""kraus_utils.py —— 生成各类 Kraus 算符的工具箱。
 
-This module provides functions to generate Kraus operators for various
-noise channels relevant to superconducting qubits. These channels can be
-used to construct detailed noise models for quantum circuits.
-"""
+涵盖超导量子比特常见的物理噪声：T₁/T₂ 弛豫、去极化、CZ 泄漏、泄漏运输、
+被动加热、DQLR 复位等。模块中的函数被 Pauli+ 噪声模型复用，以保证与论文中
+给出的 Kraus 表示一致。"""
 
 import numpy as np
 from scipy.linalg import sqrtm
@@ -70,16 +68,7 @@ QUTRIT_2Q_LABELS = [L1 + L2 for L1 in QUTRIT_BASIS_LABELS for L2 in QUTRIT_BASIS
 
 
 def kraus_amplitude_damping(time: float, t1: float) -> list[np.ndarray]:
-    """
-    Generates Kraus operators for an amplitude damping channel (T1 decay).
-
-    Args:
-        time: The duration of the noise channel.
-        t1: The T1 relaxation time constant.
-
-    Returns:
-        A list of Kraus operators [E0, E1].
-    """
+    """生成振幅阻尼（T₁ 弛豫）通道的 Kraus 算符。"""
     if t1 <= 0:
         return [PAULI_I]
     p = 1 - np.exp(-time / t1)
@@ -89,20 +78,7 @@ def kraus_amplitude_damping(time: float, t1: float) -> list[np.ndarray]:
 
 
 def kraus_dephasing(time: float, t2: float, t1: float) -> list[np.ndarray]:
-    """
-    Generates Kraus operators for a pure dephasing channel (T_phi).
-
-    The T_phi decay rate is calculated from T1 and T2 as:
-    1/T_phi = 1/T2 - 1/(2*T1)
-
-    Args:
-        time: The duration of the noise channel.
-        t2: The T2 coherence time.
-        t1: The T1 relaxation time.
-
-    Returns:
-        A list of Kraus operators [E0, E1].
-    """
+    """生成纯退相干 (Tφ) 通道的 Kraus 算符。"""
     if t2 <= 0:
         return [PAULI_I]
 
@@ -125,16 +101,7 @@ def kraus_dephasing(time: float, t2: float, t1: float) -> list[np.ndarray]:
 
 
 def kraus_depolarizing(prob: float, n_qubits: int = 1) -> list[np.ndarray]:
-    """
-    Generates Kraus operators for a depolarizing channel.
-
-    Args:
-        prob: The probability of a Pauli error occurring.
-        n_qubits: The number of qubits (1 or 2).
-
-    Returns:
-        A list of Kraus operators.
-    """
+    """生成 1/2 量子比特去极化通道的 Kraus 算符。"""
     if n_qubits == 1:
         paulis = [PAULI_I, PAULI_X, PAULI_Y, PAULI_Z]
         d = 4
@@ -174,10 +141,7 @@ IDEAL_CZ = np.array([
 
 
 def kraus_t1_t2_idle(time: float, t1: float, t2: float) -> list[np.ndarray]:
-    """
-    Generates Kraus operators for combined T1 and T2 thermal relaxation.
-    Note: This assumes T_phi is calculated from T1 and T2.
-    """
+    """组合 T₁/T₂ 弛豫的 Kraus 集，适用于门操作或空闲段。"""
     if time == 0:
         return [PAULI_I]
 
@@ -190,10 +154,7 @@ def kraus_t1_t2_idle(time: float, t1: float, t2: float) -> list[np.ndarray]:
 
 
 def kraus_zz_interaction(strength: float, time: float) -> list[np.ndarray]:
-    """
-    Generates a Kraus operator for a ZZ stray interaction.
-    This is a unitary evolution U = exp(-i * strength * Z @ Z * time).
-    """
+    """生成 ZZ 漂移相互作用的 Kraus（实为幺正演化）算符。"""
     zz = np.kron(PAULI_Z, PAULI_Z)
     # The interaction angle theta = strength * time
     # The scipy.linalg.expm function is suitable for matrix exponentials.
@@ -205,35 +166,12 @@ def kraus_zz_interaction(strength: float, time: float) -> list[np.ndarray]:
 def combine_kraus_channels(
     channel1: list[np.ndarray], channel2: list[np.ndarray]
 ) -> list[np.ndarray]:
-    """
-    Combines two quantum channels by composing their Kraus operators.
-    This represents applying channel2 after channel1.
-
-    Args:
-        channel1: List of Kraus operators for the first channel.
-        channel2: List of Kraus operators for the second channel.
-
-    Returns:
-        A new list of Kraus operators for the combined channel.
-    """
+    """串接两个量子通道，等价于先作用 ``channel1`` 再作用 ``channel2``。"""
     return [np.dot(k2, k1) for k2 in channel2 for k1 in channel1]
 
 
 def kraus_leakage_heating(p01: float, p12: float) -> list[np.ndarray]:
-    """Full three-level heating channel.
-
-    Implements a sequential heating process ``|0> -> |1>`` with probability
-    ``p01`` and ``|1> -> |2>`` with probability ``p12`` while leaving ``|2>``
-    fixed.  This follows the multi-step heating model described in the paper
-    and is trace preserving for all ``0 <= p01, p12 <= 1``.
-
-    Args:
-        p01: Probability of the ``|0> -> |1>`` transition.
-        p12: Probability of the ``|1> -> |2>`` transition.
-
-    Returns:
-        List of Kraus operators ``[K0, K1, K2]`` implementing the process.
-    """
+    """三能级被动加热通道：依次执行 ``\|0⟩→\|1⟩`` 与 ``\|1⟩→\|2⟩``。"""
 
     p01 = float(p01)
     p12 = float(p12)
@@ -253,37 +191,13 @@ def kraus_leakage_heating(p01: float, p12: float) -> list[np.ndarray]:
 
 
 def kraus_heating_to_2(prob: float) -> list[np.ndarray]:
-    """Compatibility wrapper for the legacy single-step model.
-
-    Historically the project used a simplified heating channel that only
-    implemented the ``|1> -> |2>`` transition.  This function now delegates to
-    :func:`kraus_leakage_heating` with ``p01=0`` to retain backwards
-    compatibility with existing code.
-
-    Args:
-        prob: Probability of the ``|1> -> |2>`` transition.
-
-    Returns:
-        List of Kraus operators implementing the heating process.
-    """
+    """兼容旧模型的便捷函数，仅保留 ``\|1⟩→\|2⟩`` 加热。"""
 
     return kraus_leakage_heating(0.0, prob)
 
 
 def kraus_cz_leakage(prob: float) -> list[np.ndarray]:
-    """CZ-induced leakage channel.
-
-    Models the dephasing-driven leakage processes ``|11> -> |02>`` and
-    ``|11> -> |20>`` occurring during a faulty CZ gate.  Each branch occurs
-    with probability ``prob/2`` and all other basis states are left unchanged,
-    matching the stochastic description in the paper.
-
-    Args:
-        prob: Total probability that ``|11>`` leaks during the gate.
-
-    Returns:
-        A list of Kraus operators acting on two qutrits.
-    """
+    """CZ 门导致的 ``\|11⟩``→``\|02⟩/\|20⟩`` 泄漏通道。"""
 
     p = float(prob)
     dim = 9
@@ -304,22 +218,7 @@ def kraus_cz_leakage(prob: float) -> list[np.ndarray]:
 
 
 def lift_2q_kraus_to_qutrit(kraus_ops: list[np.ndarray], levels: int = 3) -> list[np.ndarray]:
-    """Embed two-qubit Kraus operators into a two-``levels``-level space.
-
-    The input operators act on the computational subspace spanned by
-    {|00>, |01>, |10>, |11>} and are embedded into an ``(levels^2)x(levels^2)``
-    matrix acting on two ``levels``-level systems (e.g. qutrits for
-    ``levels=3`` or ququarts for ``levels=4``).  The remaining basis states are
-    left untouched and an additional Kraus operator is appended to act as
-    identity on the leaked subspace, keeping the channel trace preserving.
-
-    Args:
-        kraus_ops: List of 4x4 Kraus operators.
-        levels: Number of levels per qubit (default 3).
-
-    Returns:
-        List of ``(levels^2)x(levels^2)`` Kraus operators.
-    """
+    """将 4×4 Kraus 算符嵌入到 ``levels`` 能级的双粒子空间。"""
 
     dim = levels * levels
     comp_idx = [levels * i + j for i in range(2) for j in range(2)]
@@ -342,9 +241,7 @@ def lift_2q_kraus_to_qutrit(kraus_ops: list[np.ndarray], levels: int = 3) -> lis
 
 
 def kraus_from_pauli_probs(probs: list[float], n_qubits: int) -> list[np.ndarray]:
-    """
-    Creates a Kraus representation of a Pauli channel from a list of probabilities.
-    """
+    """根据 Pauli 概率生成对应的 Kraus 表示。"""
     if n_qubits == 1:
         basis = PAULI_1Q_BASIS
         d = 4
@@ -362,16 +259,7 @@ def kraus_from_pauli_probs(probs: list[float], n_qubits: int) -> list[np.ndarray
 
 
 def kraus_dqlr(prob_matrix: np.ndarray) -> list[np.ndarray]:
-    """
-    Generates Kraus operators for the phenomenological DQLR channel.
-
-    Args:
-        prob_matrix: A 3x3 matrix where P_ij is the probability of
-                     transitioning from state |j> to |i>.
-
-    Returns:
-        A list of Kraus operators.
-    """
+    """生成 DQLR 复位通道的 Kraus 算符，输入为 3×3 转移矩阵。"""
     kraus_ops = []
     k_sum = np.zeros((3, 3), dtype=complex)
     for i in range(3):

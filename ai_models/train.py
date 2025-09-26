@@ -231,12 +231,35 @@ def main() -> None:
 
     model = AlphaQubitDecoder(F, 256, S, grid_size, num_heads=8, num_layers=12)
 
+    def resolve_device(preferred: torch.device) -> torch.device:
+        """Validate that ``preferred`` can be initialised, falling back if required."""
+
+        def fallback_device() -> torch.device:
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            return torch.device("cpu")
+
+        try:
+            torch.empty(1, device=preferred)
+            return preferred
+        except RuntimeError as exc:
+            if preferred.type == "npu":
+                print(
+                    "[warn] Failed to initialise NPU device; falling back to CUDA/CPU.\n"
+                    f"        {exc}"
+                )
+                backup = fallback_device()
+                if backup == preferred:
+                    raise
+                return resolve_device(backup)
+            raise
+
     if args.npu and hasattr(torch, "npu") and torch.npu.is_available():
-        device = torch.device("npu")
+        device = resolve_device(torch.device("npu"))
     else:
         if args.npu:
             print("[warn] --npu requested but torch.npu is unavailable; falling back to CUDA/CPU")
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = resolve_device(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
     model_save_path = str(model_path)
     os.makedirs(os.path.dirname(model_save_path) or ".", exist_ok=True)

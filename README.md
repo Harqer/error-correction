@@ -89,6 +89,21 @@ python google_qec_simulator/main.py path/to/exp --shots 10000 --device npu
 
 在支持的硬件上选用 `--device npu`（或 `cuda`）可显著加速 soft 通道的采样过程。
 
+### 批量为所有实验生成噪声数据
+
+若 `experiment_data/` 下包含多个实验子目录，可使用批处理脚本依次调用模拟器，
+一次性写出所有 `samples_<experiment>.npz`：
+
+```bash
+python run_create_all_samples.py --shots 2000
+# 可选：跳过已存在的 .npz 并在 Ascend NPU 上运行
+python run_create_all_samples.py --skip-existing --device npu
+```
+
+脚本会递归发现 `experiment_data/` 中含有 `.stim` 的子目录，并将输出保存至
+`simulated_data/`。输出文件名基于相对路径生成，默认格式为
+`simulated_data/samples_<子目录层级以_连接>.npz`。
+
 ### 2. 查看数据
 
 生成的数据文件名会包含时间戳，例如 `output/dem_syndromes_z_20240229_101530.npy`。查看时可以先列出
@@ -106,6 +121,16 @@ python ai_models/train.py --config configs/dem.yaml
 ```
 
 可在相应的 YAML 文件中调整超参数与噪声设置。
+
+若已按实验子目录在 `simulated_data/` 下生成多个 `samples_<experiment>.npz` 文件，可使用批量入口一次性训练所有实验对应的模型：
+
+```bash
+python run_training_all.py
+# Ascend NPU 并行调度示例
+python run_training_all.py --npu
+```
+
+上述脚本会遍历 `simulated_data/*.npz`，逐个调用 `ai_models/model_mla.py`，并在提供 `--npu` 时自动检测可用 Ascend NPU 数量以并行调度任务。
 
 ### 4. 解码与评估
 

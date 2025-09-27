@@ -11,11 +11,19 @@ def soft_xor(p: np.ndarray, q: np.ndarray) -> np.ndarray:
 def soft_detection_sequence(meas_probs: Iterable[np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
     """根据每轮测量的软概率生成检测事件与泄漏轨迹。"""
     probs = [np.asarray(x, dtype=float) for x in meas_probs]
+
+    if not probs:
+        empty = np.zeros((0,), dtype=float)
+        return empty, empty
+
     p1s = [p[..., 1] for p in probs]
-    det_outs = []
-    for t in range(1, len(p1s)):
-        det_outs.append(soft_xor(p1s[t - 1], p1s[t]))
-    det = np.stack(det_outs, axis=0)
+    det_outs = [soft_xor(p1s[t - 1], p1s[t]) for t in range(1, len(p1s))]
+
+    if det_outs:
+        det = np.stack(det_outs, axis=0)
+    else:
+        det = np.zeros((0, *p1s[0].shape), dtype=float)
+
     leak = np.stack([p[..., 2] for p in probs], axis=0)
     return det, leak
 

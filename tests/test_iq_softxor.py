@@ -22,6 +22,16 @@ def test_soft_detection_sequence_shape():
     assert leak.shape == (3, 2)
     assert np.allclose(leak, [[0.05, 0.1], [0.05, 0.1], [0.05, 0.1]])
 
+
+def test_soft_detection_sequence_single_round():
+    seq = [np.array([[0.9, 0.05, 0.05], [0.8, 0.1, 0.1]])]
+    det, leak = soft_detection_sequence(seq)
+    assert det.shape == (0, 2)
+    assert leak.shape == (1, 2)
+    assert np.all(det == 0.0)
+    assert np.allclose(leak, [[0.05, 0.1]])
+
+
 def test_iq_posteriors_sum_to_one():
     model = IQReadoutModel(snr=10.0, tau=0.01, p_leak_prior=1e-3)
     rng = np.random.default_rng(1)

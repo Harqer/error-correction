@@ -223,25 +223,47 @@ class MultiHeadLatentAttention(nn.Module):
             """handling attention mask"""
             if att_mask is not None:
                 # Get the original mask shape
-                mask_size = att_mask.size(-1)
                 cached_len = start_pos + kv_seq_len        # cached key_len, including previous key
                 assert C_KV.size(1) == cached_len, \
             f"Cached key/value length {C_KV.size(1)} doesn't match theoretical length {cached_len}"
-                
-                # Create new mask matching attention matrix shape
-                extended_mask = torch.zeros(
-                    (batch_size, 1, seq_len, cached_len),  # [batch, head, query_len, key_len]
-                    device=att_mask.device,
-                    dtype=att_mask.dtype
-                )
-                
-                # Fill in the mask appropriately - we need to be careful about the causality here
-                # For each query position, it should only attend to cached positions up to that point
-                for i in range(seq_len):
-                    extended_mask[:, :, i, :(start_pos + i + 1)] = 0  # Can attend
-                    extended_mask[:, :, i, (start_pos + i + 1):] = float('-inf')  # Cannot attend
-                    
-                att_mask = extended_mask
+
+                # Ensure the mask is floating point before combining with attention scores
+                if not torch.is_floating_point(att_mask):
+                    att_mask = att_mask.to(sequence.dtype)
+
+                # Normalize mask shape to [batch, heads, seq_len, key_len]
+                if att_mask.dim() == 2:
+                    att_mask = att_mask[:, None, None, :]
+                elif att_mask.dim() == 3:
+                    att_mask = att_mask[:, None, :, :]
+                elif att_mask.dim() != 4:
+                    raise ValueError("att_mask must have 2, 3, or 4 dimensions")
+
+                att_mask = att_mask[:, :, -seq_len:, :]
+
+                if att_mask.size(-1) not in {kv_seq_len, cached_len}:
+                    raise ValueError(
+                        "att_mask last dimension must match either current KV length or total cached length"
+                    )
+
+                if att_mask.size(-1) == cached_len:
+                    att_mask = att_mask.expand(batch_size, att_mask.size(1), seq_len, cached_len)
+                else:
+                    # Mask only covers newly computed keys. Expand to cached length.
+                    mask_shape = (batch_size, att_mask.size(1), seq_len, cached_len)
+                    extended_mask = torch.full(
+                        mask_shape,
+                        fill_value=torch.finfo(att_mask.dtype).min,
+                        device=att_mask.device,
+                        dtype=att_mask.dtype,
+                    )
+
+                    if start_pos > 0:
+                        extended_mask[..., :start_pos] = 0
+
+                    att_mask_expanded = att_mask.expand(batch_size, att_mask.size(1), seq_len, kv_seq_len)
+                    extended_mask[..., start_pos:start_pos + kv_seq_len] = att_mask_expanded
+                    att_mask = extended_mask
         else:
             # Compression projection for C_KV
             C_KV = self.DKV_proj(key_value_states if is_cross_attention else sequence) #[batch_size, kv_seq_len, d_c]\

@@ -134,16 +134,22 @@ class MultiHeadLatentAttention(nn.Module):
         self.scaler = float(1.0 / math.sqrt(self.d_head + d_rotate)) # Store as float in initialization
 
         # Initialize C_KV and R_K cache for inference
-        self.cache_kv = torch.zeros(
-            (max_batch_size, max_seq_len, d_c)
+        self.register_buffer(
+            "cache_kv",
+            torch.zeros((max_batch_size, max_seq_len, d_c), dtype=torch.float32),
+            persistent=False,
         )
-        self.cache_rk = torch.zeros(
-            (max_batch_size, max_seq_len, d_rotate)
+        self.register_buffer(
+            "cache_rk",
+            torch.zeros((max_batch_size, max_seq_len, d_rotate), dtype=torch.float32),
+            persistent=False,
         )
 
         # Initialize freqs_cis for RoPE
-        self.freqs_cis = precompute_freqs_cis(
-            d_rotate, max_seq_len * 2
+        self.register_buffer(
+            "freqs_cis",
+            precompute_freqs_cis(d_rotate, max_seq_len * 2).to(torch.complex64),
+            persistent=False,
         )
     
 

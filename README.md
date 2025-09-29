@@ -134,6 +134,8 @@ python run_training_all.py --npu
 
 ### 4. 解码与评估
 
+#### 单个文件
+
 ```bash
 python ai_models/decode.py \
   --model path/to/alphaqubit_model.pth \
@@ -141,6 +143,18 @@ python ai_models/decode.py \
 ```
 
 解码结果（如逻辑错误率）将存于 `results/` 目录。
+
+#### 一键批量解码所有数据集
+
+使用新的批处理脚本可以一行命令解码 `output/` 目录下所有 `.npy/.npz`：
+
+```bash
+python run_decode_all.py --model path/to/alphaqubit_model.pth
+```
+
+- 默认遍历 `output/`，可通过 `--data-root` 指定其它目录，或传入通配符 `python run_decode_all.py --model ... "simulated_data/*.npz"`。
+- `--results-dir` 控制指标输出目录，`--predictions-dir` 额外保存逐次测量的预测概率。
+- `--skip-existing` 会跳过已经生成指标文件的数据集，支持 `--dry-run` 仅打印将执行的命令。
 
 > **提示**：用于测试与评估的数据应来自模型训练过程中未出现过的独立采样，以便可靠衡量泛化性能。
 

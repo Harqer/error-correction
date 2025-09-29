@@ -138,7 +138,7 @@ python run_training_all.py --npu
 
 ```bash
 python ai_models/decode.py \
-  --model path/to/alphaqubit_model.pth \
+  --model alphaqubit_model.pth \
   --data output/dem_syndromes_z_20240229_101530.npy
 ```
 
@@ -149,7 +149,7 @@ python ai_models/decode.py \
 使用新的批处理脚本可以一行命令解码 `output/` 目录下所有 `.npy/.npz`：
 
 ```bash
-python run_decode_all.py --model path/to/alphaqubit_model.pth
+python run_decode_all.py --model alphaqubit_model.pth
 ```
 
 - 默认遍历 `output/`，可通过 `--data-root` 指定其它目录，或传入通配符 `python run_decode_all.py --model ... "simulated_data/*.npz"`。

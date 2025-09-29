@@ -1,10 +1,11 @@
-from pauli_plus_dataset import PauliPlusDataset
 import os
 import math
 import sys
 import argparse
+from pathlib import Path
 from glob import glob
 from typing import List, Tuple
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -15,6 +16,12 @@ from tqdm import tqdm
 import torch
 import time
 from datetime import datetime, timedelta
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from pauli_plus_dataset import PauliPlusDataset
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
@@ -177,14 +184,19 @@ def get_model_name_from_path(npz_path):
 def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path):
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
+    criterion = nn.BCEWithLogitsLoss()
+
+    if epochs <= 0:
+        print("Skipping training because epochs <= 0")
+        return
+
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, 
+        optimizer,
         max_lr=lr,
         steps_per_epoch=len(tr_loader),
         epochs=epochs
     )
-    criterion = nn.BCEWithLogitsLoss()
-    
+
     best_val = float('inf')
     last_save_time = datetime.now()
     for epoch in range(1, epochs+1):
@@ -244,16 +256,17 @@ if __name__ == "__main__":
 
     # ---------- Device and optional DDP initialization ----------
     if args.npu and hasattr(torch, "npu") and torch.npu.is_available():
-        # Setup DDP on NPUs
-        if "RANK" in os.environ:  # torchrun launched
+        # Setup DDP on NPUs when launched via torchrun/torch.distributed
+        rank_env = os.environ.get("RANK")
+        local_rank_env = os.environ.get("LOCAL_RANK")
+        if rank_env is not None and local_rank_env is not None:
             dist.init_process_group(backend="hccl", init_method="env://")
-            local_rank = int(os.environ["LOCAL_RANK"])
+            local_rank = int(local_rank_env)
         else:
             local_rank = 0
         # Pin this process to the given NPU
         torch.npu.set_device(local_rank)
-        # Use CUDA device identifier so torch.device recognizes it
-        device = torch.device(f"cuda:{local_rank}")
+        device = torch.device(f"npu:{local_rank}")
     else:
         # Fallback to GPU or CPU
         local_rank = 0

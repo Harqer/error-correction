@@ -183,7 +183,11 @@ def main() -> None:
 
     data_files = resolve_targets(args)
     if not data_files:
-        print("No syndrome files found. Nothing to decode.")
+        print(
+            "No syndrome files found. Nothing to decode. "
+            "Generate data first (e.g. via generate_data.py or run_create_all_samples.py) "
+            "or adjust --data-root/targets."
+        )
         return
 
     if args.results_dir is not None:

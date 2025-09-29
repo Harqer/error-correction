@@ -152,6 +152,7 @@ python ai_models/decode.py \
 python run_decode_all.py --model alphaqubit_model.pth
 ```
 
+- 如需快速测试，可先执行前文的 `generate_data.py` 或 `run_create_all_samples.py` 生成 `output/` 下的综合数据；否则脚本会提示未找到解码目标。
 - 默认遍历 `output/`，可通过 `--data-root` 指定其它目录，或传入通配符 `python run_decode_all.py --model ... "simulated_data/*.npz"`。
 - `--results-dir` 控制指标输出目录，`--predictions-dir` 额外保存逐次测量的预测概率。
 - `--skip-existing` 会跳过已经生成指标文件的数据集，支持 `--dry-run` 仅打印将执行的命令。

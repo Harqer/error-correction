@@ -132,16 +132,32 @@ def parse_args() -> argparse.Namespace:
 def resolve_targets(args: argparse.Namespace) -> List[Path]:
     if args.targets:
         paths: Set[Path] = set()
+        patterns: Sequence[str] = tuple(args.pattern) if args.pattern else DEFAULT_PATTERNS
+
         for spec in args.targets:
-            expanded = list(Path().glob(spec))
+            try:
+                expanded = list(Path().glob(spec))
+            except NotImplementedError:
+                expanded = []
             if not expanded:
                 # Treat as literal path (may include relative components)
                 candidate = Path(spec)
                 if candidate.exists():
                     expanded = [candidate]
+
             for path in expanded:
                 if path.is_file() and path.suffix.lower() in {".npy", ".npz"}:
                     paths.add(path.resolve())
+                elif path.is_dir():
+                    for pattern in patterns:
+                        iterator: Iterable[Path]
+                        if args.recursive:
+                            iterator = path.rglob(pattern)
+                        else:
+                            iterator = path.glob(pattern)
+                        for candidate in iterator:
+                            if candidate.is_file():
+                                paths.add(candidate.resolve())
         return sorted(paths)
 
     root: Path = args.data_root

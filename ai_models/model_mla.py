@@ -21,6 +21,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# All checkpoints trained via this script are stored in ai_models/models/ so
+# that helper utilities such as run_decode_all.py can discover them reliably
+# no matter which working directory was active when training was launched.
+DEFAULT_MODEL_DIR = Path(__file__).resolve().parent / "models"
+
 from pauli_plus_dataset import PauliPlusDataset
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
@@ -174,14 +179,24 @@ def get_basis_from_filename(filename):
         return 1
     return -1
 
-def get_model_name_from_path(npz_path):
-    """Extract model name from npz file path"""
-    filename = os.path.basename(npz_path)
-    # Remove 'samples_' prefix and '.npz' suffix
-    model_name = filename[8:-4]
-    return f"{model_name}.pth"
+def get_model_name_from_path(npz_path: str | os.PathLike[str]) -> Path:
+    """Derive a checkpoint path inside ``ai_models/models`` for the dataset."""
 
-def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path):
+    DEFAULT_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    filename = Path(npz_path).name
+    stem = Path(filename).stem
+    if stem.startswith("samples_"):
+        stem = stem[len("samples_") :]
+
+    safe_stem = stem.replace(os.sep, "_")
+    return DEFAULT_MODEL_DIR / f"{safe_stem}.pth"
+
+
+def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path: Path):
+    model_save_path = Path(model_save_path)
+    model_save_path.parent.mkdir(parents=True, exist_ok=True)
+
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
     criterion = nn.BCEWithLogitsLoss()

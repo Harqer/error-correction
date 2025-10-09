@@ -149,8 +149,19 @@ python ai_models/decode.py \
 使用新的批处理脚本可以一行命令解码 `output/` 目录下所有 `.npy/.npz`：
 
 ```bash
-python run_decode_all.py --model alphaqubit_model.pth
+# 请替换为实际的模型绝对路径，或放置在支持的搜索目录中
+python run_decode_all.py --model /full/path/to/alphaqubit_model.pth
 ```
+
+默认情况下脚本会在以下目录中自动查找模型文件：
+
+- `ai_models/checkpoints/`
+- `ai_models/models/`
+- `checkpoints/`
+- `models/`
+
+因此也可以将 `alphaqubit_model.pth` 复制（或下载）到上述任一目录，再通过
+`python run_decode_all.py --model alphaqubit_model.pth` 直接调用。
 
 - 如需快速测试，可先执行前文的 `generate_data.py` 或 `run_create_all_samples.py` 生成 `output/` 下的综合数据；否则脚本会提示未找到解码目标。
 - 默认遍历 `output/`，可通过 `--data-root` 指定其它目录，或传入通配符 `python run_decode_all.py --model ... "simulated_data/*.npz"`。

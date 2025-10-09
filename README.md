@@ -155,11 +155,11 @@ python ai_models/decode.py \
 获得权重后即可批量解码：
 
 ```bash
-# 直接给出绝对路径最省事
+# 直接给出绝对路径最省事；若仓库内仅存在一个 .pth 也可省略 --model
 python run_decode_all.py --model /full/path/to/alphaqubit_model.pth
 ```
 
-如果只提供文件名，脚本会按顺序在以下目录里搜索：`ai_models/checkpoints/`、`ai_models/models/`、`checkpoints/`、`models/`。把 `.pth` 复制到这些目录之一，就能用 `python run_decode_all.py --model alphaqubit_model.pth` 调用。
+如果只提供文件名，脚本会按顺序在以下目录里搜索：仓库根目录、`ai_models/checkpoints/`、`ai_models/models/`、`checkpoints/`、`models/`。把 `.pth` 复制到这些目录之一，就能用 `python run_decode_all.py --model alphaqubit_model.pth` 调用；若这些目录里只存在一个 `.pth` 文件，也可以直接运行 `python run_decode_all.py`，脚本会自动选中它。
 
 - 如需快速测试，可先执行前文的 `generate_data.py` 或 `run_create_all_samples.py` 生成 `output/` 下的综合数据；否则脚本会提示未找到解码目标。
 - 默认遍历 `output/`，可通过 `--data-root` 指定其它目录，或传入通配符 `python run_decode_all.py --model ... "simulated_data/*.npz"`。

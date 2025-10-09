@@ -9,7 +9,7 @@ AlphaQubit 提供从量子纠错仿真数据生成、模型训练到解码评估
 - **数据生成**：支持检测误差模型（DEM）、电路去极化噪声（SI1000）以及泄漏、串扰与软读出（Pauli+）等多种噪声类型
 - **配置实验**：通过 `configs/` 目录下的 YAML 文件灵活调整实验参数
 - **表面码仿真**：`simulator/` 中实现量子表面码仿真器
-- **模型权重**：仓库不再内置 `.pth` 文件；训练脚本会在仓库根目录生成权重，或可手动放入 `ai_models/models/` 等目录供解码脚本自动发现
+- **模型权重**：仓库不再内置 `.pth` 文件；训练脚本会把新模型统一保存在 `ai_models/models/`，解码脚本会自动在该目录与仓库根目录、`ai_models/checkpoints/` 等位置查找
 - **可视化工具**：包括 `npy_viewer.py`（.npy 数据查看）和 `plot_alphaqubit_results.py`（绘制性能曲线）
 - **PyTorch 集成**：在 `ai_models/` 中提供训练与推理脚本
 
@@ -132,6 +132,15 @@ python run_training_all.py --npu
 
 上述脚本会遍历 `simulated_data/*.npz`，逐个调用 `ai_models/model_mla.py`，并在提供 `--npu` 时自动检测可用 Ascend NPU 数量以并行调度任务。
 
+训练完成后，所有新生成的权重都会出现在 `ai_models/models/` 目录中：
+
+```bash
+ls ai_models/models
+python run_decode_all.py --model ai_models/models/<模型文件名>.pth
+```
+
+这样即可在完成一次批量训练后，直接用单条命令批量解码与评估（`run_decode_all.py` 会对 `output/` 及其备选目录中的全部综合数据执行推理，并把指标写入 `results/`）。
+
 ### 4. 解码与评估
 
 #### 单个文件
@@ -149,14 +158,14 @@ python ai_models/decode.py \
 批处理脚本 **不会** 替你下载模型，它只接受已经存在的 `.pth` 权重。请先确认模型文件放在什么位置：
 
 - `ai_models/train.py` 默认把 `dem/si1000/pauli_plus/paper_aligned` 四种配置分别保存为仓库根目录下的 `alphaqubit_<模型类型>.pth`，可以用 `--model-path` 改写输出路径。
-- `ai_models/model_mla.py`（`run_training_all.py` 的底层入口）会把 `simulated_data/samples_NAME.npz` 训练出的模型写成当前工作目录下的 `NAME.pth`。
+- `ai_models/model_mla.py`（`run_training_all.py` 的底层入口）会把 `simulated_data/samples_NAME.npz` 训练出的模型统一写入 `ai_models/models/NAME.pth`。
 - `ai_models/fine_tune.py` 与 `run_fine_tune_all.py` 会针对数据集文件夹 `folder/` 生成 `alphaqubit_<folder>.pth`，同样直接落在仓库根目录。
 
 获得权重后即可批量解码：
 
 ```bash
-# 直接给出绝对路径最省事；若仓库内仅存在一个 .pth 也可省略 --model
-python run_decode_all.py --model /full/path/to/alphaqubit_model.pth
+# 直接给出绝对路径最省事；若 `ai_models/models/` 中仅存在一个 .pth 也可省略 --model
+python run_decode_all.py --model ai_models/models/surface_code_bX_d5_r01_center_5_5.pth
 ```
 
 如果只提供文件名，脚本会按顺序在以下目录里搜索：仓库根目录、`ai_models/checkpoints/`、`ai_models/models/`、`checkpoints/`、`models/`。把 `.pth` 复制到这些目录之一，就能用 `python run_decode_all.py --model alphaqubit_model.pth` 调用；若这些目录里只存在一个 `.pth` 文件，也可以直接运行 `python run_decode_all.py`，脚本会自动选中它。

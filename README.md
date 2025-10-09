@@ -9,7 +9,7 @@ AlphaQubit 提供从量子纠错仿真数据生成、模型训练到解码评估
 - **数据生成**：支持检测误差模型（DEM）、电路去极化噪声（SI1000）以及泄漏、串扰与软读出（Pauli+）等多种噪声类型
 - **配置实验**：通过 `configs/` 目录下的 YAML 文件灵活调整实验参数
 - **表面码仿真**：`simulator/` 中实现量子表面码仿真器
-- **预训练模型**：内置 `alphaqubit_model.pth`，可直接进行解码
+- **模型权重**：仓库不再内置 `.pth` 文件；训练脚本会在仓库根目录生成权重，或可手动放入 `ai_models/models/` 等目录供解码脚本自动发现
 - **可视化工具**：包括 `npy_viewer.py`（.npy 数据查看）和 `plot_alphaqubit_results.py`（绘制性能曲线）
 - **PyTorch 集成**：在 `ai_models/` 中提供训练与推理脚本
 
@@ -38,7 +38,7 @@ pip install numpy scipy stim pyyaml torch leakysim>=0.4.0
 ├── generate_data.py             # 训练数据生成脚本
 ├── npy_viewer.py                # .npy 数据查看工具
 ├── plot_alphaqubit_results.py   # 解码性能绘制脚本
-├── alphaqubit_model.pth         # 预训练模型
+├── models/                      # 可选：将训练或下载得到的 .pth 权重放在此处，脚本会自动搜索
 └── README.md                    # 项目说明
 ```
 
@@ -146,22 +146,20 @@ python ai_models/decode.py \
 
 #### 一键批量解码所有数据集
 
-使用新的批处理脚本可以一行命令解码 `output/` 目录下所有 `.npy/.npz`：
+批处理脚本 **不会** 替你下载模型，它只接受已经存在的 `.pth` 权重。请先确认模型文件放在什么位置：
+
+- `ai_models/train.py` 默认把 `dem/si1000/pauli_plus/paper_aligned` 四种配置分别保存为仓库根目录下的 `alphaqubit_<模型类型>.pth`，可以用 `--model-path` 改写输出路径。
+- `ai_models/model_mla.py`（`run_training_all.py` 的底层入口）会把 `simulated_data/samples_NAME.npz` 训练出的模型写成当前工作目录下的 `NAME.pth`。
+- `ai_models/fine_tune.py` 与 `run_fine_tune_all.py` 会针对数据集文件夹 `folder/` 生成 `alphaqubit_<folder>.pth`，同样直接落在仓库根目录。
+
+获得权重后即可批量解码：
 
 ```bash
-# 请替换为实际的模型绝对路径，或放置在支持的搜索目录中
+# 直接给出绝对路径最省事
 python run_decode_all.py --model /full/path/to/alphaqubit_model.pth
 ```
 
-默认情况下脚本会在以下目录中自动查找模型文件：
-
-- `ai_models/checkpoints/`
-- `ai_models/models/`
-- `checkpoints/`
-- `models/`
-
-因此也可以将 `alphaqubit_model.pth` 复制（或下载）到上述任一目录，再通过
-`python run_decode_all.py --model alphaqubit_model.pth` 直接调用。
+如果只提供文件名，脚本会按顺序在以下目录里搜索：`ai_models/checkpoints/`、`ai_models/models/`、`checkpoints/`、`models/`。把 `.pth` 复制到这些目录之一，就能用 `python run_decode_all.py --model alphaqubit_model.pth` 调用。
 
 - 如需快速测试，可先执行前文的 `generate_data.py` 或 `run_create_all_samples.py` 生成 `output/` 下的综合数据；否则脚本会提示未找到解码目标。
 - 默认遍历 `output/`，可通过 `--data-root` 指定其它目录，或传入通配符 `python run_decode_all.py --model ... "simulated_data/*.npz"`。

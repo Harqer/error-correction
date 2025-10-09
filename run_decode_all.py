@@ -16,6 +16,7 @@ FALLBACK_DATA_ROOTS: Sequence[Path] = (
 )
 DECODE_SCRIPT = Path("ai_models/decode.py")
 MODEL_SEARCH_DIRS: Sequence[Path] = (
+    Path("."),
     Path("ai_models/checkpoints"),
     Path("ai_models/models"),
     Path("checkpoints"),
@@ -34,8 +35,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=Path,
-        required=True,
-        help="Path to the AlphaQubit checkpoint (.pth) used for decoding",
+        default=None,
+        help=(
+            "Path to the AlphaQubit checkpoint (.pth) used for decoding. "
+            "When omitted the script attempts to auto-discover a single "
+            "checkpoint in common directories."
+        ),
     )
     parser.add_argument(
         "--data-root",
@@ -231,24 +236,57 @@ def make_predictions_path(data_file: Path, args: argparse.Namespace) -> Path:
     return args.predictions_dir / f"{data_file.stem}_probs.npy"
 
 
-def resolve_model_path(model: Path) -> Path:
+def resolve_model_path(model: Path | None) -> Path:
     """Resolve the checkpoint path, searching common directories when needed."""
 
-    if model.exists():
-        return model
+    search_dirs: Sequence[Path] = MODEL_SEARCH_DIRS
 
-    if not model.is_absolute() and model.parent == Path():
-        for directory in MODEL_SEARCH_DIRS:
-            candidate = directory / model
-            if candidate.exists():
-                print(f"Info: resolved model path '{model}' to '{candidate}'.")
-                return candidate
+    if model is not None:
+        if model.exists():
+            return model.resolve()
 
-    search_hint = ", ".join(str(directory) for directory in MODEL_SEARCH_DIRS)
-    raise FileNotFoundError(
-        "Model checkpoint not found: "
-        f"{model}. Provide the full path or place it in one of: {search_hint}"
-    )
+        if not model.is_absolute() and model.parent == Path():
+            for directory in search_dirs:
+                candidate = (directory / model).resolve()
+                if candidate.exists():
+                    print(f"Info: resolved model path '{model}' to '{candidate}'.")
+                    return candidate
+
+        search_hint = ", ".join(str(directory) for directory in search_dirs)
+        raise FileNotFoundError(
+            "Model checkpoint not found: "
+            f"{model}. Provide the full path or place it in one of: {search_hint}"
+        )
+
+    candidates: List[Path] = []
+    for directory in search_dirs:
+        if not directory.exists() or not directory.is_dir():
+            continue
+        for path in directory.iterdir():
+            if path.is_file() and path.suffix.lower() == ".pth":
+                resolved = path.resolve()
+                if resolved not in candidates:
+                    candidates.append(resolved)
+
+    if not candidates:
+        search_hint = ", ".join(str(directory) for directory in search_dirs)
+        raise FileNotFoundError(
+            "No model checkpoint provided and none discovered. "
+            "Use --model to specify the path explicitly or place a single .pth "
+            f"file in one of: {search_hint}"
+        )
+
+    if len(candidates) > 1:
+        formatted = "\n".join(f"  - {path}" for path in candidates)
+        raise FileNotFoundError(
+            "Multiple model checkpoints discovered. "
+            "Use --model to choose one explicitly among:\n"
+            f"{formatted}"
+        )
+
+    chosen = candidates[0]
+    print(f"Info: auto-discovered model checkpoint at '{chosen}'.")
+    return chosen
 
 
 def main() -> None:

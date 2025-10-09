@@ -2,6 +2,8 @@ from argparse import Namespace
 from importlib import util
 from pathlib import Path
 
+import pytest
+
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "run_decode_all.py"
 SPEC = util.spec_from_file_location("run_decode_all", MODULE_PATH)
@@ -10,6 +12,7 @@ _MODULE = util.module_from_spec(SPEC)
 SPEC.loader.exec_module(_MODULE)
 
 resolve_targets = _MODULE.resolve_targets
+resolve_model_path = _MODULE.resolve_model_path
 
 
 def make_args(**overrides):
@@ -50,3 +53,42 @@ def test_directory_target_respects_recursive_flag(tmp_path):
     # With recursion we collect the nested file.
     args_recursive = make_args(targets=[str(parent)], recursive=True)
     assert resolve_targets(args_recursive) == [file_in_nested.resolve()]
+
+
+def test_resolve_model_path_prefers_explicit(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "alphaqubit.pth"
+    checkpoint.write_bytes(b"model")
+
+    monkeypatch.setattr(_MODULE, "MODEL_SEARCH_DIRS", (tmp_path,))
+
+    resolved = resolve_model_path(checkpoint)
+    assert resolved == checkpoint.resolve()
+
+
+def test_resolve_model_path_auto_discovers_single(tmp_path, monkeypatch, capsys):
+    checkpoint = tmp_path / "auto.pth"
+    checkpoint.write_bytes(b"model")
+
+    monkeypatch.setattr(_MODULE, "MODEL_SEARCH_DIRS", (tmp_path,))
+
+    resolved = resolve_model_path(None)
+    captured = capsys.readouterr()
+
+    assert resolved == checkpoint.resolve()
+    assert "auto-discovered" in captured.out
+
+
+def test_resolve_model_path_requires_disambiguation(tmp_path, monkeypatch):
+    first = tmp_path / "first.pth"
+    second = tmp_path / "second.pth"
+    first.write_bytes(b"a")
+    second.write_bytes(b"b")
+
+    monkeypatch.setattr(_MODULE, "MODEL_SEARCH_DIRS", (tmp_path,))
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        resolve_model_path(None)
+
+    message = str(excinfo.value)
+    assert "Multiple model checkpoints" in message
+    assert "first.pth" in message and "second.pth" in message

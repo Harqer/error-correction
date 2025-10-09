@@ -15,6 +15,12 @@ FALLBACK_DATA_ROOTS: Sequence[Path] = (
     Path("experiment_data"),
 )
 DECODE_SCRIPT = Path("ai_models/decode.py")
+MODEL_SEARCH_DIRS: Sequence[Path] = (
+    Path("ai_models/checkpoints"),
+    Path("ai_models/models"),
+    Path("checkpoints"),
+    Path("models"),
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -225,11 +231,33 @@ def make_predictions_path(data_file: Path, args: argparse.Namespace) -> Path:
     return args.predictions_dir / f"{data_file.stem}_probs.npy"
 
 
+def resolve_model_path(model: Path) -> Path:
+    """Resolve the checkpoint path, searching common directories when needed."""
+
+    if model.exists():
+        return model
+
+    if not model.is_absolute() and model.parent == Path():
+        for directory in MODEL_SEARCH_DIRS:
+            candidate = directory / model
+            if candidate.exists():
+                print(f"Info: resolved model path '{model}' to '{candidate}'.")
+                return candidate
+
+    search_hint = ", ".join(str(directory) for directory in MODEL_SEARCH_DIRS)
+    raise FileNotFoundError(
+        "Model checkpoint not found: "
+        f"{model}. Provide the full path or place it in one of: {search_hint}"
+    )
+
+
 def main() -> None:
     args = parse_args()
 
     if not DECODE_SCRIPT.exists():
         raise FileNotFoundError(f"decode script not found: {DECODE_SCRIPT}")
+
+    model_path = resolve_model_path(args.model)
 
     data_files = resolve_targets(args)
     if not data_files:
@@ -250,7 +278,7 @@ def main() -> None:
             "python",
             str(DECODE_SCRIPT),
             "--model",
-            str(args.model),
+            str(model_path),
             "--data",
             str(data_path),
             "--batch-size",

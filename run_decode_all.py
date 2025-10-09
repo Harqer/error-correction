@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Iterable, List, Sequence, Set
 
 DEFAULT_PATTERNS: Sequence[str] = ("*.npy", "*.npz")
+DEFAULT_DATA_ROOT = Path("output")
+FALLBACK_DATA_ROOTS: Sequence[Path] = (
+    Path("simulated_data"),
+    Path("experiment_data"),
+)
 DECODE_SCRIPT = Path("ai_models/decode.py")
 
 
@@ -29,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-root",
         type=Path,
-        default=Path("output"),
+        default=DEFAULT_DATA_ROOT,
         help=(
             "Directory to scan for syndrome files when no positional targets are "
             "given (default: ./output)."
@@ -129,6 +134,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _collect_from_root(
+    root: Path,
+    patterns: Sequence[str],
+    recursive: bool,
+) -> List[Path]:
+    files: Set[Path] = set()
+    for pattern in patterns:
+        collector: Iterable[Path]
+        if recursive:
+            collector = root.rglob(pattern)
+        else:
+            collector = root.glob(pattern)
+        for path in collector:
+            if path.is_file():
+                files.add(path.resolve())
+    return sorted(files)
+
+
 def resolve_targets(args: argparse.Namespace) -> List[Path]:
     if args.targets:
         paths: Set[Path] = set()
@@ -161,22 +184,33 @@ def resolve_targets(args: argparse.Namespace) -> List[Path]:
         return sorted(paths)
 
     root: Path = args.data_root
+    patterns: Sequence[str] = tuple(args.pattern) if args.pattern else DEFAULT_PATTERNS
+
     if not root.exists():
         print(f"Warning: data root {root} does not exist.")
-        return []
+        files: List[Path] = []
+    else:
+        files = _collect_from_root(root, patterns, args.recursive)
 
-    patterns: Sequence[str] = tuple(args.pattern) if args.pattern else DEFAULT_PATTERNS
-    collector: Iterable[Path]
-    files: Set[Path] = set()
-    for pattern in patterns:
-        if args.recursive:
-            collector = root.rglob(pattern)
-        else:
-            collector = root.glob(pattern)
-        for path in collector:
-            if path.is_file():
-                files.add(path.resolve())
-    return sorted(files)
+    if files or args.targets:
+        return files
+
+    # No files were discovered in the requested root.  If the caller kept the
+    # default root ("output"), try a couple of well-known fallback locations so
+    # that bundled sample data can be decoded out-of-the-box.
+    if root == DEFAULT_DATA_ROOT:
+        for fallback in FALLBACK_DATA_ROOTS:
+            if not fallback.exists():
+                continue
+            fallback_files = _collect_from_root(fallback, patterns, args.recursive)
+            if fallback_files:
+                print(
+                    "Info: no syndrome files found under 'output/'. "
+                    f"Falling back to '{fallback}/'."
+                )
+                return fallback_files
+
+    return files
 
 
 def make_metrics_path(data_file: Path, args: argparse.Namespace) -> Path:

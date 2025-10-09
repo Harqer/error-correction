@@ -20,8 +20,9 @@ Usage:
 import argparse
 import os
 import subprocess
+import time
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Tuple
 
 try:
     import torch  # type: ignore
@@ -35,6 +36,7 @@ EPOCHS: str = "20"
 BATCH_SIZE: str = "16"
 SCRIPT: Path = Path("ai_models/model_mla.py")
 DATA_DIR: Path = Path("simulated_data")
+MODEL_DIR: Path = Path("ai_models") / "models"
 
 
 def main() -> None:
@@ -62,6 +64,13 @@ def main() -> None:
     if not npz_files:
         print(f"No .npz files found in {DATA_DIR}")
         return
+
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    expected_models: Dict[Path, Path] = {npz: _get_model_path(npz) for npz in npz_files}
+    print("Planned model outputs:")
+    for npz, model_path in expected_models.items():
+        print(f"  {npz} -> {model_path}")
+    run_start_time = time.time()
 
     # Determine the number of devices available.  Prefer NPUs when --npu is
     # specified, otherwise fall back to CUDA.  When torch is unavailable we
@@ -100,7 +109,7 @@ def main() -> None:
             f"Detected {device_count} {'NPUs' if args.npu else 'GPUs'}. "
             "Launching tasks in parallel."
         )
-        processes: List[subprocess.Popen] = []
+        processes: List[Tuple[subprocess.Popen, List[str]]] = []
         for idx, npz in enumerate(npz_files):
             device_idx = idx % device_count
             env = os.environ.copy()
@@ -111,14 +120,15 @@ def main() -> None:
             elif not args.npu and torch is not None and torch.cuda.is_available():
                 env["CUDA_VISIBLE_DEVICES"] = str(device_idx)
             print(f"[async] starting on device {device_idx}: {' '.join(cmd)}")
-            processes.append(subprocess.Popen(cmd, env=env))
+            processes.append((subprocess.Popen(cmd, env=env), cmd))
             # Limit the number of concurrent processes to the number of devices
             if len(processes) >= device_count:
-                finished = processes.pop(0)
-                finished.wait()
+                proc, proc_cmd = processes.pop(0)
+                _wait_for_process(proc, proc_cmd)
         # Wait for any remaining processes to finish
-        for p in processes:
-            p.wait()
+        for proc, proc_cmd in processes:
+            _wait_for_process(proc, proc_cmd)
+        _verify_models(expected_models, run_start_time)
         return
 
     # Serial fallback: one training process at a time
@@ -132,6 +142,51 @@ def main() -> None:
             env["CUDA_VISIBLE_DEVICES"] = "0"
         print(f"Running: {' '.join(cmd)}")
         subprocess.run(cmd, check=True, env=env)
+
+    _verify_models(expected_models, run_start_time)
+
+
+def _get_model_path(npz_file: Path) -> Path:
+    """Return the expected checkpoint path for a given dataset."""
+
+    filename = npz_file.name
+    stem = Path(filename).stem
+    if stem.startswith("samples_"):
+        stem = stem[len("samples_") :]
+    return MODEL_DIR / f"{stem}.pth"
+
+
+def _wait_for_process(process: subprocess.Popen, cmd: List[str]) -> None:
+    """Wait for ``process`` to finish and raise if it exits with an error."""
+
+    return_code = process.wait()
+    if return_code != 0:
+        raise subprocess.CalledProcessError(return_code, cmd)
+
+
+def _verify_models(models: Dict[Path, Path], start_time: float) -> None:
+    """Ensure that every dataset produced a fresh model checkpoint."""
+
+    missing: List[str] = []
+    stale: List[str] = []
+    tolerance = 1.0  # seconds; accounts for filesystem timestamp precision
+
+    for npz, model_path in models.items():
+        if not model_path.exists():
+            missing.append(f"{npz} -> {model_path}")
+            continue
+        if model_path.stat().st_mtime < start_time - tolerance:
+            stale.append(f"{npz} -> {model_path}")
+
+    if missing or stale:
+        error_lines = ["Model verification failed after training."]
+        if missing:
+            error_lines.append("Missing checkpoints:\n  " + "\n  ".join(missing))
+        if stale:
+            error_lines.append("Stale checkpoints (not updated in this run):\n  " + "\n  ".join(stale))
+        raise RuntimeError("\n".join(error_lines))
+
+    print(f"All models saved successfully in {MODEL_DIR.resolve()}.")
 
 
 if __name__ == "__main__":

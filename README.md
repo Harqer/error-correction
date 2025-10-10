@@ -139,7 +139,9 @@ ls ai_models/models
 python run_decode_all.py --model ai_models/models/
 ```
 
-这样即可在完成一次批量训练后，直接用单条命令批量解码与评估。`run_decode_all.py` 会对 `output/` 及其备选目录中的全部综合数据执行推理，并把指标写入 `results/<模型文件名>/`（若目录内只有一个模型，则仍直接写入 `results/`）。
+这样即可在完成一次批量训练后，直接用单条命令批量解码与评估。`run_decode_all.py` 会对 `output/` 及其备选目录中的全部综合数据执行推理。
+
+> **输出位置**：若未显式提供 `--results-dir`，脚本会把每个数据集对应的 `*_metrics.json` 写入仓库根目录下的 `results/`，并在同时解码多个模型时自动按模型文件名创建子目录（例如 `results/alphaqubit_dem/`）。若指定了 `--results-dir`，则始终写入该目录；同理，如需保存逐次测量的概率向量，可使用 `--predictions-dir` 指向某个文件夹，脚本会输出 `*_probs.npy`。运行时终端会提示实际的写入路径。
 
 ### 4. 解码与评估
 

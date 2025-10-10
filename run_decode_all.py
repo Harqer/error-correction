@@ -124,8 +124,10 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help=(
-            "Optional directory to collect metrics JSON files.  When provided, "
-            "each decode run writes RESULTS_DIR/<stem>_metrics.json."
+            "Optional directory to collect metrics JSON files.  When omitted, "
+            "metrics are stored under ./results/ (grouped per model when "
+            "multiple checkpoints are decoded).  When provided, each decode run "
+            "writes RESULTS_DIR/<stem>_metrics.json."
         ),
     )
     parser.add_argument(
@@ -134,7 +136,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "If set, save per-shot probabilities to this directory as "
-            "<stem>_probs.npy for each input file."
+            "<stem>_probs.npy for each input file.  Defaults to no probability "
+            "dumps unless explicitly requested."
         ),
     )
     parser.add_argument(
@@ -372,10 +375,30 @@ def main() -> None:
     if args.predictions_dir is not None:
         args.predictions_dir.mkdir(parents=True, exist_ok=True)
 
+    metrics_root = args.results_dir if args.results_dir is not None else Path("results")
+    predictions_root = args.predictions_dir
+
     for model_path in model_paths:
         model_identifier = model_path.stem
         if multi_model:
             print(f"Info: decoding with model '{model_identifier}'.")
+
+        model_metrics_dir = metrics_root
+        if multi_model and model_identifier:
+            model_metrics_dir = model_metrics_dir / model_identifier
+        print(
+            "Info: metrics JSON files will be written under "
+            f"{model_metrics_dir}/"
+        )
+
+        if predictions_root is not None:
+            model_predictions_dir = predictions_root
+            if multi_model and model_identifier:
+                model_predictions_dir = model_predictions_dir / model_identifier
+            print(
+                "Info: per-shot probability arrays will be written under "
+                f"{model_predictions_dir}/"
+            )
 
         for data_path in data_files:
             cmd: List[str] = [

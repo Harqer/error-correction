@@ -136,10 +136,12 @@ python run_training_all.py --npu
 
 ```bash
 ls ai_models/models
-python run_decode_all.py --model ai_models/models/<模型文件名>.pth
+python run_decode_all.py --model ai_models/models/
 ```
 
-这样即可在完成一次批量训练后，直接用单条命令批量解码与评估（`run_decode_all.py` 会对 `output/` 及其备选目录中的全部综合数据执行推理，并把指标写入 `results/`）。
+这样即可在完成一次批量训练后，直接用单条命令批量解码与评估。`run_decode_all.py` 会对 `output/` 及其备选目录中的全部综合数据执行推理。
+
+> **输出位置**：若未显式提供 `--results-dir`，脚本会把每个数据集对应的 `*_metrics.json` 写入仓库根目录下的 `results/`，并在同时解码多个模型时自动按模型文件名创建子目录（例如 `results/alphaqubit_dem/`）。若指定了 `--results-dir`，则始终写入该目录；同理，如需保存逐次测量的概率向量，可使用 `--predictions-dir` 指向某个文件夹，脚本会输出 `*_probs.npy`。运行时终端会提示实际的写入路径。
 
 ### 4. 解码与评估
 
@@ -164,11 +166,12 @@ python ai_models/decode.py \
 获得权重后即可批量解码：
 
 ```bash
-# 直接给出绝对路径最省事；若 `ai_models/models/` 中仅存在一个 .pth 也可省略 --model
+# `--model` 支持单个文件、目录或留空（自动发现唯一的模型）
 python run_decode_all.py --model ai_models/models/surface_code_bX_d5_r01_center_5_5.pth
+python run_decode_all.py --model ai_models/models/
 ```
 
-如果只提供文件名，脚本会按顺序在以下目录里搜索：仓库根目录、`ai_models/checkpoints/`、`ai_models/models/`、`checkpoints/`、`models/`。把 `.pth` 复制到这些目录之一，就能用 `python run_decode_all.py --model alphaqubit_model.pth` 调用；若这些目录里只存在一个 `.pth` 文件，也可以直接运行 `python run_decode_all.py`，脚本会自动选中它。
+如果只提供文件名，脚本会按顺序在以下目录里搜索：仓库根目录、`ai_models/checkpoints/`、`ai_models/models/`、`checkpoints/`、`models/`。把 `.pth` 复制到这些目录之一，就能用 `python run_decode_all.py --model alphaqubit_model.pth` 调用；若这些目录里只存在一个 `.pth` 文件，也可以直接运行 `python run_decode_all.py`，脚本会自动选中它。若提供目录路径，则会遍历其中的所有 `.pth` 文件并为每个模型分别生成结果。
 
 - 如需快速测试，可先执行前文的 `generate_data.py` 或 `run_create_all_samples.py` 生成 `output/` 下的综合数据；否则脚本会提示未找到解码目标。
 - 默认遍历 `output/`，可通过 `--data-root` 指定其它目录，或传入通配符 `python run_decode_all.py --model ... "simulated_data/*.npz"`。

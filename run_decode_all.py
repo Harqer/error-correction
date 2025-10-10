@@ -24,6 +24,22 @@ MODEL_SEARCH_DIRS: Sequence[Path] = (
 )
 
 
+def _discover_checkpoints(directory: Path) -> List[Path]:
+    """Return all checkpoint files inside *directory* sorted by name."""
+
+    if not directory.exists() or not directory.is_dir():
+        return []
+
+    candidates: List[Path] = []
+    for path in directory.iterdir():
+        if path.is_file() and path.suffix.lower() == ".pth":
+            resolved = path.resolve()
+            if resolved not in candidates:
+                candidates.append(resolved)
+
+    return sorted(candidates)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -39,7 +55,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Path to the AlphaQubit checkpoint (.pth) used for decoding. "
             "When omitted the script attempts to auto-discover a single "
-            "checkpoint in common directories."
+            "checkpoint in common directories.  Passing a directory causes "
+            "the script to decode with every .pth file inside."
         ),
     )
     parser.add_argument(
@@ -107,8 +124,10 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help=(
-            "Optional directory to collect metrics JSON files.  When provided, "
-            "each decode run writes RESULTS_DIR/<stem>_metrics.json."
+            "Optional directory to collect metrics JSON files.  When omitted, "
+            "metrics are stored under ./results/ (grouped per model when "
+            "multiple checkpoints are decoded).  When provided, each decode run "
+            "writes RESULTS_DIR/<stem>_metrics.json."
         ),
     )
     parser.add_argument(
@@ -117,7 +136,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "If set, save per-shot probabilities to this directory as "
-            "<stem>_probs.npy for each input file."
+            "<stem>_probs.npy for each input file.  Defaults to no probability "
+            "dumps unless explicitly requested."
         ),
     )
     parser.add_argument(
@@ -224,35 +244,82 @@ def resolve_targets(args: argparse.Namespace) -> List[Path]:
     return files
 
 
-def make_metrics_path(data_file: Path, args: argparse.Namespace) -> Path:
-    if args.results_dir is None:
-        return Path("results") / f"{data_file.stem}_metrics.json"
-    return args.results_dir / f"{data_file.stem}_metrics.json"
+def make_metrics_path(
+    data_file: Path,
+    args: argparse.Namespace,
+    model_identifier: str | None,
+    multi_model: bool,
+) -> Path:
+    base_dir = args.results_dir if args.results_dir is not None else Path("results")
+    if multi_model and model_identifier is not None:
+        base_dir = base_dir / model_identifier
+    return base_dir / f"{data_file.stem}_metrics.json"
 
 
-def make_predictions_path(data_file: Path, args: argparse.Namespace) -> Path:
-    if args.predictions_dir is None:
-        return Path("results") / f"{data_file.stem}_probs.npy"
-    return args.predictions_dir / f"{data_file.stem}_probs.npy"
+def make_predictions_path(
+    data_file: Path,
+    args: argparse.Namespace,
+    model_identifier: str | None,
+    multi_model: bool,
+) -> Path:
+    base_dir = (
+        args.predictions_dir if args.predictions_dir is not None else Path("results")
+    )
+    if multi_model and model_identifier is not None:
+        base_dir = base_dir / model_identifier
+    return base_dir / f"{data_file.stem}_probs.npy"
 
 
-def resolve_model_path(model: Path | None) -> Path:
-    """Resolve the checkpoint path, searching common directories when needed."""
+def resolve_model_paths(model: Path | None) -> List[Path]:
+    """Resolve checkpoint paths, optionally searching common directories."""
 
     search_dirs: Sequence[Path] = MODEL_SEARCH_DIRS
 
+    def _describe_search_dirs() -> str:
+        return ", ".join(str(directory) for directory in search_dirs)
+
     if model is not None:
         if model.exists():
-            return model.resolve()
+            resolved = model.resolve()
+            if resolved.is_dir():
+                candidates = _discover_checkpoints(resolved)
+                if not candidates:
+                    raise FileNotFoundError(
+                        "Model directory provided but no .pth checkpoints were found: "
+                        f"{resolved}"
+                    )
+                print(
+                    f"Info: discovered {len(candidates)} model checkpoint(s) "
+                    f"under '{resolved}'."
+                )
+                return candidates
+            if resolved.is_file():
+                return [resolved]
+            raise FileNotFoundError(f"Model path is neither file nor directory: {resolved}")
 
         if not model.is_absolute() and model.parent == Path():
             for directory in search_dirs:
                 candidate = (directory / model).resolve()
                 if candidate.exists():
-                    print(f"Info: resolved model path '{model}' to '{candidate}'.")
-                    return candidate
+                    if candidate.is_dir():
+                        candidates = _discover_checkpoints(candidate)
+                        if not candidates:
+                            raise FileNotFoundError(
+                                "Model directory provided but no .pth checkpoints "
+                                f"were found: {candidate}"
+                            )
+                        print(
+                            f"Info: resolved model directory '{model}' to '{candidate}' "
+                            f"and found {len(candidates)} checkpoint(s)."
+                        )
+                        return candidates
+                    if candidate.is_file():
+                        print(
+                            f"Info: resolved model path '{model}' to '{candidate}'."
+                        )
+                        return [candidate]
 
-        search_hint = ", ".join(str(directory) for directory in search_dirs)
+        search_hint = _describe_search_dirs()
         raise FileNotFoundError(
             "Model checkpoint not found: "
             f"{model}. Provide the full path or place it in one of: {search_hint}"
@@ -260,16 +327,12 @@ def resolve_model_path(model: Path | None) -> Path:
 
     candidates: List[Path] = []
     for directory in search_dirs:
-        if not directory.exists() or not directory.is_dir():
-            continue
-        for path in directory.iterdir():
-            if path.is_file() and path.suffix.lower() == ".pth":
-                resolved = path.resolve()
-                if resolved not in candidates:
-                    candidates.append(resolved)
+        for path in _discover_checkpoints(directory):
+            if path not in candidates:
+                candidates.append(path)
 
     if not candidates:
-        search_hint = ", ".join(str(directory) for directory in search_dirs)
+        search_hint = _describe_search_dirs()
         raise FileNotFoundError(
             "No model checkpoint provided and none discovered. "
             "Use --model to specify the path explicitly or place a single .pth "
@@ -286,7 +349,7 @@ def resolve_model_path(model: Path | None) -> Path:
 
     chosen = candidates[0]
     print(f"Info: auto-discovered model checkpoint at '{chosen}'.")
-    return chosen
+    return [chosen]
 
 
 def main() -> None:
@@ -295,7 +358,8 @@ def main() -> None:
     if not DECODE_SCRIPT.exists():
         raise FileNotFoundError(f"decode script not found: {DECODE_SCRIPT}")
 
-    model_path = resolve_model_path(args.model)
+    model_paths = resolve_model_paths(args.model)
+    multi_model = len(model_paths) > 1
 
     data_files = resolve_targets(args)
     if not data_files:
@@ -311,46 +375,77 @@ def main() -> None:
     if args.predictions_dir is not None:
         args.predictions_dir.mkdir(parents=True, exist_ok=True)
 
-    for data_path in data_files:
-        cmd: List[str] = [
-            "python",
-            str(DECODE_SCRIPT),
-            "--model",
-            str(model_path),
-            "--data",
-            str(data_path),
-            "--batch-size",
-            str(args.batch_size),
-            "--hidden-dim",
-            str(args.hidden_dim),
-            "--heads",
-            str(args.heads),
-            "--layers",
-            str(args.layers),
-        ]
-        if args.device is not None:
-            cmd.extend(["--device", args.device])
-        if args.basis is not None:
-            cmd.extend(["--basis", args.basis])
+    metrics_root = args.results_dir if args.results_dir is not None else Path("results")
+    predictions_root = args.predictions_dir
 
-        output_path = make_metrics_path(data_path, args)
-        predictions_path = None
-        if args.skip_existing and output_path.exists():
-            print(f"Skipping {data_path} (metrics already exist at {output_path})")
-            continue
-        if args.results_dir is not None or not output_path.parent.exists():
+    for model_path in model_paths:
+        model_identifier = model_path.stem
+        if multi_model:
+            print(f"Info: decoding with model '{model_identifier}'.")
+
+        model_metrics_dir = metrics_root
+        if multi_model and model_identifier:
+            model_metrics_dir = model_metrics_dir / model_identifier
+        print(
+            "Info: metrics JSON files will be written under "
+            f"{model_metrics_dir}/"
+        )
+
+        if predictions_root is not None:
+            model_predictions_dir = predictions_root
+            if multi_model and model_identifier:
+                model_predictions_dir = model_predictions_dir / model_identifier
+            print(
+                "Info: per-shot probability arrays will be written under "
+                f"{model_predictions_dir}/"
+            )
+
+        for data_path in data_files:
+            cmd: List[str] = [
+                "python",
+                str(DECODE_SCRIPT),
+                "--model",
+                str(model_path),
+                "--data",
+                str(data_path),
+                "--batch-size",
+                str(args.batch_size),
+                "--hidden-dim",
+                str(args.hidden_dim),
+                "--heads",
+                str(args.heads),
+                "--layers",
+                str(args.layers),
+            ]
+            if args.device is not None:
+                cmd.extend(["--device", args.device])
+            if args.basis is not None:
+                cmd.extend(["--basis", args.basis])
+
+            output_path = make_metrics_path(
+                data_path, args, model_identifier, multi_model
+            )
+            predictions_path = None
+            if args.skip_existing and output_path.exists():
+                print(
+                    f"Skipping {data_path} for model {model_identifier} "
+                    f"(metrics already exist at {output_path})"
+                )
+                continue
             output_path.parent.mkdir(parents=True, exist_ok=True)
-        cmd.extend(["--output", str(output_path)])
+            cmd.extend(["--output", str(output_path)])
 
-        if args.predictions_dir is not None:
-            predictions_path = make_predictions_path(data_path, args)
-            predictions_path.parent.mkdir(parents=True, exist_ok=True)
-            cmd.extend(["--predictions", str(predictions_path)])
+            if args.predictions_dir is not None:
+                predictions_path = make_predictions_path(
+                    data_path, args, model_identifier, multi_model
+                )
+                predictions_path.parent.mkdir(parents=True, exist_ok=True)
+                cmd.extend(["--predictions", str(predictions_path)])
 
-        print(f"Running decode: {' '.join(cmd)}")
-        if args.dry_run:
-            continue
-        subprocess.run(cmd, check=True)
+            print(f"Running decode: {' '.join(cmd)}")
+            if args.dry_run:
+                continue
+            subprocess.run(cmd, check=True)
 
 
 if __name__ == "__main__":

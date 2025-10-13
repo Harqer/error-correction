@@ -232,28 +232,36 @@ class SurfaceCodeCircuitBuilder:
                 continue
 
             tgts = _targets_list(inst)
-            noisy.append(inst)
 
-            if name in ("H", "S", "S_DAG"):
-                probs = _twirl_pauli_probs_1q(depol_p=p_sq, t_gate=t_1q, t1=t1, t2=t2)
-                noisy.append_operation("PAULI_CHANNEL_1", tgts, probs)
+            if name not in ("M", "MR"):
+                # For operations without measurement, directly append them without modification
+                noisy.append(inst)
 
-            elif name in ("CX", "CZ"):
-                # 对双量子比特门执行 GPT，得到 Pauli 概率与泄漏概率。
-                probs2, _p_leak = _twirl_pauli_probs_2q_with_leakage(
-                    depol_p=p_xtalk, t_gate=t_2q, t1=t1, t2=t2, p_cz_leak=p_cz_leak
-                )
-                noisy.append_operation("PAULI_CHANNEL_2", tgts, probs2)
-                # 记录下该 CZ 门，留待 tick 结束时统一添加 ZZ 串扰。
-                if len(tgts) == 2:
-                    current_tick_cz.append((len(noisy) - 1, (tgts[0], tgts[1])))
+                if name in ("H", "S", "S_DAG"):
+                    probs = _twirl_pauli_probs_1q(depol_p=p_sq, t_gate=t_1q, t1=t1, t2=t2)
+                    noisy.append_operation("PAULI_CHANNEL_1", tgts, probs)
 
-            elif name == "R":
-                noisy.append_operation("X_ERROR", tgts, p_reset)
+                elif name in ("CX", "CZ"):
+                    # 对双量子比特门执行 GPT，得到 Pauli 概率与泄漏概率。
+                    probs2, _p_leak = _twirl_pauli_probs_2q_with_leakage(
+                        depol_p=p_xtalk, t_gate=t_2q, t1=t1, t2=t2, p_cz_leak=p_cz_leak
+                    )
+                    noisy.append_operation("PAULI_CHANNEL_2", tgts, probs2)
+                    # 记录下该 CZ 门，留待 tick 结束时统一添加 ZZ 串扰。
+                    if len(tgts) == 2:
+                        current_tick_cz.append((len(noisy) - 1, (tgts[0], tgts[1])))
 
+                elif name == "R":
+                    noisy.append_operation("X_ERROR", tgts, p_reset)
+
+            # For operations with measurement, append their corresponding noisy operations
             elif name == "M":
                 # 刻意保留硬翻转误差，软 I/Q 概率由 IQReadoutModel 在采样阶段处理。
-                noisy.append_operation("X_ERROR", tgts, p_readout)
+                noisy.append_operation("M", tgts, p_readout)
+
+            else:  # name == "MR"
+                noisy.append_operation("MR", tgts, p_readout)
+                noisy.append_operation("X_ERROR", tgts, p_reset)  # add reset noise
 
         # 若电路以 CZ 结束，最后再执行一次串扰注入。
         self._append_cross_talk_for_tick(noisy, current_tick_cz, p_xtalk)

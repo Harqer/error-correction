@@ -234,6 +234,7 @@ class SurfaceCodeCircuitBuilder:
             tgts = _targets_list(inst)
 
             if name not in ("M", "MR"):
+                # For operations without measurement, directly append them without modification
                 noisy.append(inst)
 
                 if name in ("H", "S", "S_DAG"):
@@ -253,13 +254,14 @@ class SurfaceCodeCircuitBuilder:
                 elif name == "R":
                     noisy.append_operation("X_ERROR", tgts, p_reset)
 
+            # For operations with measurement, append their corresponding noisy operations
             elif name == "M":
                 # 刻意保留硬翻转误差，软 I/Q 概率由 IQReadoutModel 在采样阶段处理。
                 noisy.append_operation("M", tgts, p_readout)
 
             else:  # name == "MR"
                 noisy.append_operation("MR", tgts, p_readout)
-                noisy.append_operation("X_ERROR", tgts, p_reset)
+                noisy.append_operation("X_ERROR", tgts, p_reset)  # add reset noise
 
         # 若电路以 CZ 结束，最后再执行一次串扰注入。
         self._append_cross_talk_for_tick(noisy, current_tick_cz, p_xtalk)

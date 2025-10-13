@@ -39,6 +39,7 @@ def test_circuit_contains_expected_instructions():
     assert "CX" in circuit_str
     assert "M" in circuit_str
     assert "R" in circuit_str
+    assert "MR" in circuit_str
     assert "DETECTOR" in circuit_str
     assert "OBSERVABLE_INCLUDE" in circuit_str
 
@@ -71,7 +72,7 @@ def test_circuit_stats_are_reasonable():
 
     # Check reset and measurement noise
     assert count_ops(circuit, "X_ERROR") == (
-        count_ops(ideal_circuit, "R") + count_ops(ideal_circuit, "M")
+        count_ops(ideal_circuit, "R") + count_ops(ideal_circuit, "MR")
     )
 
     # Check two-qubit gate noise

@@ -24,6 +24,8 @@ import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from ai_models.model_mla import model_stem_from_npz
+
 try:
     import torch  # type: ignore
 except ImportError:
@@ -149,10 +151,7 @@ def main() -> None:
 def _get_model_path(npz_file: Path) -> Path:
     """Return the expected checkpoint path for a given dataset."""
 
-    filename = npz_file.name
-    stem = Path(filename).stem
-    if stem.startswith("samples_"):
-        stem = stem[len("samples_") :]
+    stem = model_stem_from_npz(npz_file)
     return MODEL_DIR / f"{stem}.pth"
 
 

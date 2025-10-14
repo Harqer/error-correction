@@ -2,6 +2,7 @@ import os
 import math
 import sys
 import argparse
+import hashlib
 from pathlib import Path
 from glob import glob
 from typing import List, Tuple
@@ -25,6 +26,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # that helper utilities such as run_decode_all.py can discover them reliably
 # no matter which working directory was active when training was launched.
 DEFAULT_MODEL_DIR = Path(__file__).resolve().parent / "models"
+SIMULATED_DATA_DIR = PROJECT_ROOT / "simulated_data"
 
 from pauli_plus_dataset import PauliPlusDataset
 
@@ -179,18 +181,44 @@ def get_basis_from_filename(filename):
         return 1
     return -1
 
+def _strip_samples_prefix(name: str) -> str:
+    return name[len("samples_") :] if name.startswith("samples_") else name
+
+
+def model_stem_from_npz(npz_path: str | os.PathLike[str]) -> str:
+    """Return a deterministic, collision-resistant model stem for ``npz_path``."""
+
+    path = Path(npz_path)
+    resolved = path.resolve()
+
+    try:
+        relative = resolved.relative_to(SIMULATED_DATA_DIR)
+    except ValueError:
+        relative = Path(path.name)
+
+    stem_path = relative.with_suffix("")
+    parts = list(stem_path.parts)
+    if parts:
+        parts[-1] = _strip_samples_prefix(parts[-1])
+
+    raw = "/".join(parts) if parts else stem_path.as_posix()
+    if not raw:
+        raw = path.with_suffix("").name or "model"
+
+    safe = raw.replace("/", "_")
+    if "/" in raw:
+        digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
+        safe = f"{safe}__{digest}"
+
+    return safe
+
+
 def get_model_name_from_path(npz_path: str | os.PathLike[str]) -> Path:
     """Derive a checkpoint path inside ``ai_models/models`` for the dataset."""
 
     DEFAULT_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-
-    filename = Path(npz_path).name
-    stem = Path(filename).stem
-    if stem.startswith("samples_"):
-        stem = stem[len("samples_") :]
-
-    safe_stem = stem.replace(os.sep, "_")
-    return DEFAULT_MODEL_DIR / f"{safe_stem}.pth"
+    stem = model_stem_from_npz(npz_path)
+    return DEFAULT_MODEL_DIR / f"{stem}.pth"
 
 
 def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path: Path):

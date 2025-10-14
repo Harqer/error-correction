@@ -28,7 +28,7 @@ if str(PROJECT_ROOT) not in sys.path:
 DEFAULT_MODEL_DIR = Path(__file__).resolve().parent / "models"
 SIMULATED_DATA_DIR = PROJECT_ROOT / "simulated_data"
 
-from pauli_plus_dataset import PauliPlusDataset
+from ai_models.pauli_plus_dataset import PauliPlusDataset
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim

@@ -19,10 +19,11 @@ Usage:
 
 import argparse
 import os
+import socket
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Set, Tuple
 
 from ai_models.model_mla import model_stem_from_npz
 
@@ -111,7 +112,8 @@ def main() -> None:
             f"Detected {device_count} {'NPUs' if args.npu else 'GPUs'}. "
             "Launching tasks in parallel."
         )
-        processes: List[Tuple[subprocess.Popen, List[str]]] = []
+        processes: List[Tuple[subprocess.Popen, List[str], int]] = []
+        allocated_ports: Set[int] = set()
         for idx, npz in enumerate(npz_files):
             device_idx = idx % device_count
             env = os.environ.copy()
@@ -126,15 +128,23 @@ def main() -> None:
                 env.setdefault("LOCAL_RANK", str(device_idx))
             elif not args.npu and torch is not None and torch.cuda.is_available():
                 env["CUDA_VISIBLE_DEVICES"] = str(device_idx)
-            print(f"[async] starting on device {device_idx}: {' '.join(cmd)}")
-            processes.append((subprocess.Popen(cmd, env=env), cmd))
+            master_port = _allocate_master_port(allocated_ports)
+            env.setdefault("MASTER_ADDR", "127.0.0.1")
+            env["MASTER_PORT"] = str(master_port)
+            print(
+                "[async] starting on device "
+                f"{device_idx}: {' '.join(cmd)} (MASTER_PORT={master_port})"
+            )
+            processes.append((subprocess.Popen(cmd, env=env), cmd, master_port))
             # Limit the number of concurrent processes to the number of devices
             if len(processes) >= device_count:
-                proc, proc_cmd = processes.pop(0)
+                proc, proc_cmd, port = processes.pop(0)
                 _wait_for_process(proc, proc_cmd)
+                allocated_ports.discard(port)
         # Wait for any remaining processes to finish
-        for proc, proc_cmd in processes:
+        for proc, proc_cmd, port in processes:
             _wait_for_process(proc, proc_cmd)
+            allocated_ports.discard(port)
         _verify_models(expected_models, run_start_time)
         return
 
@@ -167,6 +177,25 @@ def _wait_for_process(process: subprocess.Popen, cmd: List[str]) -> None:
     return_code = process.wait()
     if return_code != 0:
         raise subprocess.CalledProcessError(return_code, cmd)
+
+
+def _allocate_master_port(allocated_ports: Set[int]) -> int:
+    """Return a TCP port that is currently free on the host.
+
+    Torch's distributed initialisation uses ``MASTER_PORT`` and defaults to a
+    static value, which causes contention when multiple independent training
+    processes start concurrently.  This helper finds a free port and reserves it
+    for the lifetime of the spawned subprocess to avoid collisions.
+    """
+
+    for _ in range(100):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("", 0))
+            port = sock.getsockname()[1]
+        if port not in allocated_ports:
+            allocated_ports.add(port)
+            return port
+    raise RuntimeError("Unable to allocate a free MASTER_PORT for distributed training")
 
 
 def _verify_models(models: Dict[Path, Path], start_time: float) -> None:

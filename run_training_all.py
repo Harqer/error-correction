@@ -119,6 +119,11 @@ def main() -> None:
             # Set device visibility for the child process
             if args.npu and torch is not None and hasattr(torch, "npu"):
                 env["NPU_VISIBLE_DEVICES"] = str(device_idx)
+                # Some training scripts historically accessed LOCAL_RANK directly
+                # when binding to a device.  Ensure it is populated so those
+                # scripts do not crash with KeyError when launched outside of
+                # torchrun.
+                env.setdefault("LOCAL_RANK", str(device_idx))
             elif not args.npu and torch is not None and torch.cuda.is_available():
                 env["CUDA_VISIBLE_DEVICES"] = str(device_idx)
             print(f"[async] starting on device {device_idx}: {' '.join(cmd)}")
@@ -140,6 +145,7 @@ def main() -> None:
         if args.npu and torch is not None and hasattr(torch, "npu"):
             # Pin to the first NPU for consistency
             env["NPU_VISIBLE_DEVICES"] = "0"
+            env.setdefault("LOCAL_RANK", "0")
         elif not args.npu and torch is not None and torch.cuda.is_available():
             env["CUDA_VISIBLE_DEVICES"] = "0"
         print(f"Running: {' '.join(cmd)}")

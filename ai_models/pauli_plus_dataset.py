@@ -4,6 +4,7 @@ import numpy as np
 import math
 import os
 import logging
+from typing import Iterable, List, Optional
  
 
 # Set up logging
@@ -76,6 +77,71 @@ def update_final_mask(S, final_mask, d):
 
 
 
+def _register_candidate(keys: Iterable[str], bucket: List[str], files: Iterable[str]) -> None:
+    for key in keys:
+        if key in files and key not in bucket:
+            bucket.append(key)
+
+
+def _is_valid_label(
+    candidate: np.ndarray, num_samples: int, name: str, npz_path: str
+) -> bool:
+    if candidate.ndim == 0:
+        logger.warning("Skipping '%s' from %s because it is a scalar", name, npz_path)
+        return False
+    if candidate.shape[0] != num_samples:
+        logger.warning(
+            "Skipping '%s' from %s because first dimension %s does not match %s samples",
+            name,
+            npz_path,
+            candidate.shape[0],
+            num_samples,
+        )
+        return False
+    if candidate.ndim > 1:
+        trailing = int(np.prod(candidate.shape[1:]))
+        if trailing == 0:
+            logger.warning("Skipping '%s' from %s because it has zero columns", name, npz_path)
+            return False
+    return True
+
+
+def choose_label_key(
+    data: np.lib.npyio.NpzFile, num_samples: int, basis_id: int, npz_path: str
+) -> Optional[str]:
+    label_candidates: List[str] = []
+
+    files = list(data.files)
+    if basis_id == 0:  # X-basis
+        _register_candidate(["obs_x", "logical_x"], label_candidates, files)
+    elif basis_id == 1:  # Z-basis
+        _register_candidate(["obs_z", "logical_z"], label_candidates, files)
+    else:  # Unknown basis
+        _register_candidate(["obs_x", "obs_z", "logical_x", "logical_z"], label_candidates, files)
+
+    _register_candidate(["obs", "label", "labels", "logical", "observables"], label_candidates, files)
+    _register_candidate([k for k in files if k != "data"], label_candidates, files)
+
+    for cand in label_candidates:
+        candidate = data[cand]
+        if _is_valid_label(candidate, num_samples, cand, npz_path):
+            return cand
+    return None
+
+
+def find_label_key(npz_path: str | os.PathLike[str], basis_id: int) -> Optional[str]:
+    """Return the first valid label array key for ``npz_path`` or ``None``."""
+
+    try:
+        with np.load(npz_path) as data:
+            if "data" not in data.files:
+                return None
+            num_samples = data["data"].shape[0]
+            return choose_label_key(data, num_samples, basis_id, str(npz_path))
+    except FileNotFoundError:
+        return None
+
+
 class PauliPlusDataset(Dataset):
     """
     Loads one NPZ produced by google_qec_simulator and returns
@@ -95,60 +161,7 @@ class PauliPlusDataset(Dataset):
         self.x = torch.tensor(data["data"], dtype=torch.float32)   # (N,R,S,3)
         num_samples = self.x.shape[0]
 
-        # ----------------------------------------------------------
-        # choose label array with a robust priority order
-        # ----------------------------------------------------------
-
-        def _register_candidate(keys, bucket):
-            for key in keys:
-                if key in data.files and key not in bucket:
-                    bucket.append(key)
-
-        def _is_valid(candidate, name):
-            if candidate.ndim == 0:
-                logger.warning(
-                    "Skipping '%s' from %s because it is a scalar", name, npz_path
-                )
-                return False
-            if candidate.shape[0] != num_samples:
-                logger.warning(
-                    "Skipping '%s' from %s because first dimension %s does not match %s samples",
-                    name,
-                    npz_path,
-                    candidate.shape[0],
-                    num_samples,
-                )
-                return False
-            # collapse trailing dimensions to detect empty feature axes
-            if candidate.ndim > 1:
-                trailing = int(np.prod(candidate.shape[1:]))
-                if trailing == 0:
-                    logger.warning(
-                        "Skipping '%s' from %s because it has zero columns", name, npz_path
-                    )
-                    return False
-            return True
-
-        label_candidates = []
-
-        if self.basis_id == 0:  # X-basis
-            _register_candidate(["obs_x", "logical_x"], label_candidates)
-        elif self.basis_id == 1:  # Z-basis
-            _register_candidate(["obs_z", "logical_z"], label_candidates)
-        else:  # Unknown basis
-            _register_candidate(["obs_x", "obs_z", "logical_x", "logical_z"], label_candidates)
-
-        _register_candidate(["obs", "label", "labels", "logical", "observables"], label_candidates)
-        _register_candidate([k for k in data.files if k != "data"], label_candidates)
-
-        label_key = None
-        for cand in label_candidates:
-            candidate = data[cand]
-            if not _is_valid(candidate, cand):
-                continue
-            label_key = cand
-            break
-
+        label_key = choose_label_key(data, num_samples, self.basis_id, str(npz_path))
         if label_key is None:
             raise ValueError(
                 f"Could not find a valid label array in {npz_path}. Available keys: {data.files}"

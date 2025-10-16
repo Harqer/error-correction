@@ -20,10 +20,10 @@ from pathlib import Path
 import argparse
 import numpy as np
 
-from stim_helpers  import extract_rounds_and_dets
-from data_helpers  import reshape_detectors, soft_channels
-from data_manager  import DataManager
-from circuit_utils import sample_detectors_obs
+from .stim_helpers  import extract_rounds_and_dets
+from .data_helpers  import reshape_detectors, soft_channels
+from .data_manager  import DataManager
+from .circuit_utils import sample_detectors_obs
 
 
 # --------------------------------------------------------------------

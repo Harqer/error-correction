@@ -2,7 +2,7 @@
 import numpy as np
 import torch
 from pathlib import Path
-from stim_helpers import extract_rounds_and_dets
+from .stim_helpers import extract_rounds_and_dets
 
 
 def reshape_detectors(det_flat: np.ndarray, stim_path: Path, shots: int) -> np.ndarray:
@@ -52,7 +52,22 @@ def soft_channels(n, snr=10.0, t=0.01, leak_p=0.00275, device: str = "cpu"):
         Posterior probabilities for states 1 and 2.
     """
 
-    dev = torch.device(device)
+    normalized_device = device.lower()
+
+    # ``torch.device`` does not yet expose an "npu" backend in stock
+    # PyTorch builds.  We treat it (and any other unsupported device
+    # aliases) as a request to fall back to CPU execution so the data
+    # pipeline keeps running on machines without specialised hardware.
+    device_aliases = {
+        "npu": "cpu",
+    }
+    normalized_device = device_aliases.get(normalized_device, normalized_device)
+
+    try:
+        dev = torch.device(normalized_device)
+    except RuntimeError:
+        print(f"[soft_channels] Unsupported device '{device}', falling back to CPU.")
+        dev = torch.device("cpu")
 
     # Sample physical states {0,1,2}
     probs = torch.tensor([1 - leak_p - 0.5, 0.5, leak_p], device=dev)

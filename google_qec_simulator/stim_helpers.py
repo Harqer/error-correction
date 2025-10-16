@@ -51,7 +51,7 @@ def extract_rounds_and_dets(stim_path: Path) -> tuple[int, int]:
     """
     dem = _dem_from_stim(stim_path)
 
-    # 1. modern Stim
+    # 1. modern Stim exposes structured counts
     if hasattr(dem, "num_ticks") and dem.num_ticks:
         rounds = dem.num_ticks
         dets_total = dem.num_detectors
@@ -63,6 +63,13 @@ def extract_rounds_and_dets(stim_path: Path) -> tuple[int, int]:
     dets_total = words.count("detector")
     if rounds:
         return rounds, dets_total // rounds
+
+    # Stim 1.13 (and some minimal circuits) report ``num_ticks=None`` but
+    # still expose ``num_detectors``.  In that case we assume a single
+    # round containing all detectors.  This mirrors the behaviour of the
+    # token-counting fallback while avoiding a division by zero.
+    if hasattr(dem, "num_detectors") and dem.num_detectors:
+        return 1, dem.num_detectors
 
     # 3. fallback: infer from path tags
     rounds, dist = _parse_rounds_distance(stim_path)

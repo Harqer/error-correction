@@ -98,11 +98,51 @@ class PauliPlusDataset(Dataset):
         # ----------------------------------------------------------
         label_key = None
         for cand in ("obs", "label"):
-            if cand in data:
+            if cand not in data:
+                continue
+
+            candidate = data[cand]
+
+            # Skip empty observable arrays (e.g. shape (N, 0))
+            if candidate.ndim > 1 and candidate.shape[1] == 0:
+                logger.warning(
+                    "Skipping '%s' from %s because it has zero columns", cand, npz_path
+                )
+                continue
+
+            # Skip scalars or other unexpected shapes that cannot serve as labels
+            if candidate.ndim == 0:
+                logger.warning(
+                    "Skipping '%s' from %s because it is a scalar", cand, npz_path
+                )
+                continue
+
+            label_key = cand
+            break
+        if label_key is None:                       # last resort
+            fallback_keys = [k for k in data.files if k != "data"]
+            for cand in fallback_keys:
+                candidate = data[cand]
+
+                if candidate.ndim > 1 and candidate.shape[1] == 0:
+                    logger.warning(
+                        "Skipping '%s' from %s because it has zero columns", cand, npz_path
+                    )
+                    continue
+
+                if candidate.ndim == 0:
+                    logger.warning(
+                        "Skipping '%s' from %s because it is a scalar", cand, npz_path
+                    )
+                    continue
+
                 label_key = cand
                 break
-        if label_key is None:                       # last resort
-            label_key = [k for k in data.files if k != "data"][0]
+
+            if label_key is None:
+                raise ValueError(
+                    f"Could not find a valid label array in {npz_path}. Available keys: {data.files}"
+                )
 
         y = data[label_key]                         # shape (N,) or (N,k)
         if y.ndim > 1:

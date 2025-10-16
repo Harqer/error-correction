@@ -221,7 +221,17 @@ def get_model_name_from_path(npz_path: str | os.PathLike[str]) -> Path:
     return DEFAULT_MODEL_DIR / f"{stem}.pth"
 
 
-def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path: Path):
+def train(
+    model,
+    tr_loader,
+    va_loader,
+    epochs,
+    lr,
+    device,
+    model_save_path: Path,
+    *,
+    tqdm_position: int = 0,
+):
     model_save_path = Path(model_save_path)
     model_save_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -246,7 +256,12 @@ def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path: Path
         model.train()
         total_loss = 0
 
-        pbar = tqdm(tr_loader, desc=f"Epoch {epoch}/{epochs}")
+        pbar = tqdm(
+            tr_loader,
+            desc=f"Epoch {epoch}/{epochs}",
+            position=max(tqdm_position, 0),
+            leave=False,
+        )
         for (xb, basis, mask), yb in pbar:
             xb, basis, mask, yb = xb.to(device), basis.to(device), mask.to(device), yb.to(device)
             
@@ -281,7 +296,13 @@ def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path: Path
         val_loss = val_loss / len(va_loader)
         val_acc = correct / len(va_loader.dataset)
         
-        print(f"Epoch {epoch}: Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+        # ``leave`` above keeps the terminal output compact while still allowing
+        # multiple devices to display progress bars simultaneously.  To avoid
+        # losing a summary per epoch we emit a dedicated line here.
+        print(
+            f"Epoch {epoch}: Train Loss: {avg_loss:.4f}, "
+            f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
+        )
         
         if val_loss < best_val:
             best_val = val_loss
@@ -303,6 +324,16 @@ if __name__ == "__main__":
             "Explicit device index to use when launching outside torch.distributed. "
             "This allows external launchers to pin individual processes to specific "
             "NPUs/GPUs without relying on visibility environment variables."
+        ),
+    )
+    parser.add_argument(
+        "--tqdm_position",
+        type=int,
+        default=0,
+        help=(
+            "Optional tqdm progress-bar position.  When running multiple training "
+            "processes concurrently this should be unique per device so that "
+            "their progress bars can render simultaneously."
         ),
     )
     args = parser.parse_args()
@@ -379,5 +410,14 @@ if __name__ == "__main__":
     # Generate model save path from input file name
     model_save_path = get_model_name_from_path(args.npz_file)
     
-    train(model, tr_loader, va_loader, args.epochs, args.lr, device, model_save_path)
+    train(
+        model,
+        tr_loader,
+        va_loader,
+        args.epochs,
+        args.lr,
+        device,
+        model_save_path,
+        tqdm_position=args.tqdm_position,
+    )
     print(f"Training complete. Model saved to {model_save_path}")

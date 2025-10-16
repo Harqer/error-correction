@@ -25,7 +25,8 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-from ai_models.model_mla import model_stem_from_npz
+from ai_models.model_mla import get_basis_from_filename, model_stem_from_npz
+from ai_models.pauli_plus_dataset import find_label_key
 
 try:
     import torch  # type: ignore
@@ -72,9 +73,24 @@ def main() -> None:
 
     # Collect all npz files in the data directory
     data_root = args.data_root
-    npz_files: List[Path] = sorted(data_root.rglob("*.npz")) if data_root.is_dir() else []
-    if not npz_files:
+    all_npz: List[Path] = sorted(data_root.rglob("*.npz")) if data_root.is_dir() else []
+    if not all_npz:
         print(f"No .npz files found in {data_root}")
+        return
+
+    npz_files: List[Path] = []
+    for npz in all_npz:
+        basis = get_basis_from_filename(npz.name)
+        if basis == -1:
+            basis = 0
+        label_key = find_label_key(npz, basis)
+        if label_key is None:
+            print(f"Skipping {npz} – no valid label array found")
+            continue
+        npz_files.append(npz)
+
+    if not npz_files:
+        print("No datasets with valid labels found; aborting")
         return
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)

@@ -20,9 +20,11 @@ cd ALPHAQUBIT
 # 可选：创建并激活虚拟环境
 python3.8 -m venv venv
 source venv/bin/activate
-# 安装依赖
+# 安装依赖（任选其一）
 pip install --upgrade pip
 pip install numpy scipy stim pyyaml torch leakysim>=0.4.0
+# 或使用项目罗列的依赖清单
+pip install -r requirements.txt
 
 # 如需在华为 Ascend NPU 上训练，请安装带有 torch.npu 的 PyTorch 发行版并根据官方文档完成驱动配置。
 ```
@@ -32,8 +34,9 @@ pip install numpy scipy stim pyyaml torch leakysim>=0.4.0
 ```plaintext
 ├── ai_models/                   # 模型训练与解码脚本
 ├── configs/                     # 实验配置 YAML 文件
-├── google_experiment_data/      # Google Sycamore 实验数据
+├── experiment_data/             # 实验电路与 Stim 描述
 ├── simulator/                   # 量子纠错仿真器
+├── simulated_data/              # google_qec_simulator 生成的 .npz（脚本可自动建立）
 ├── generate_data.py             # 训练数据生成脚本
 ├── npy_viewer.py                # .npy 数据查看工具
 ├── plot_alphaqubit_results.py   # 解码性能绘制脚本
@@ -63,10 +66,11 @@ python generate_data.py --model paper_aligned --basis x --samples 10000
 ```
 
 - 默认输出目录为 `output/`，文件名含时间戳，如 `output/dem_syndromes_z_YYYYMMDD_HHMMSS.npy`。
-- `google_qec_simulator/main.py` 可直接生成 `.npz` 噪声文件，并通过 `--device {cpu,cuda,npu}` 指定计算硬件：
+- `google_qec_simulator` 可直接生成 `.npz` 噪声文件，并通过 `--device {cpu,cuda,npu}` 指定计算硬件：
 
 ```bash
-python google_qec_simulator/main.py path/to/exp --shots 10000 --device npu
+python -m google_qec_simulator.main path/to/exp --shots 10000 --device npu
+# 默认输出写入 simulated_data/samples_<实验文件夹>.npz，可用 --out 自定义位置
 ```
 
 #### 预生成大规模预训练数据
@@ -123,7 +127,7 @@ python run_training_all.py
 python run_training_all.py --npu  # 自动检测 Ascend NPU 并行调度
 ```
 
-`run_training_all.py` 会遍历 `pretrain_data/**/*.npz`，为每个数据集调用 `ai_models/model_mla.py` 并把权重写入 `ai_models/models/NAME.pth`。如需指向其它数据目录，可使用 `--data-root <path>`。脚本会自动串行调度任务；在支持 Ascend NPU 并传入 `--npu` 时，会检测可用设备并并行分配训练进程，因此无需单独的串行脚本。
+`run_training_all.py` 会遍历 `pretrain_data/**/*.npz`，为每个数据集调用 `ai_models/model_mla.py` 并把权重写入 `ai_models/models/NAME.pth`。如需指向其它数据目录，可使用 `--data-root <path>`（例如指向 `simulated_data/`）。脚本会自动串行调度任务；在支持 Ascend NPU 并传入 `--npu` 时，会检测可用设备并并行分配训练进程，因此无需单独的串行脚本。
 
 ### 4. 解码与评估
 
@@ -156,9 +160,16 @@ python run_decode_all.py --model ai_models/models/
 
 ### 5. 可视化
 
+`plot_alphaquibit_results.py` 可以对经过微调的实验文件夹计算 LER 并绘制柱状图：
+
 ```bash
-python plot_alphaqubit_results.py --input results/metrics.json
+python plot_alphaquibit_results.py --data-root experiment_data/sycamore_runs --model-dir .
 ```
+
+- `--data-root`：包含多个实验子目录（每个子目录需含 `detection_events.b8`、`obs_flips_actual.01` 等文件）。
+- `--model-dir`：对应的 `alphaqubit_<folder>.pth` 模型所在目录，默认为当前路径。
+
+脚本会读取各子目录、按文件名解析轮数 `rXX`，再载入同名权重计算逻辑错误率，并绘制汇总图。
 
 ## Paper-aligned 噪声模型参数
 

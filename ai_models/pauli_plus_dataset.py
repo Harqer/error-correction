@@ -93,60 +93,71 @@ class PauliPlusDataset(Dataset):
 
         data = np.load(npz_path)
         self.x = torch.tensor(data["data"], dtype=torch.float32)   # (N,R,S,3)
+        num_samples = self.x.shape[0]
+
         # ----------------------------------------------------------
-        # choose label array:  prefer 'obs', then 'label', else first
+        # choose label array with a robust priority order
         # ----------------------------------------------------------
-        label_key = None
-        for cand in ("obs", "label"):
-            if cand not in data:
-                continue
 
-            candidate = data[cand]
+        def _register_candidate(keys, bucket):
+            for key in keys:
+                if key in data.files and key not in bucket:
+                    bucket.append(key)
 
-            # Skip empty observable arrays (e.g. shape (N, 0))
-            if candidate.ndim > 1 and candidate.shape[1] == 0:
-                logger.warning(
-                    "Skipping '%s' from %s because it has zero columns", cand, npz_path
-                )
-                continue
-
-            # Skip scalars or other unexpected shapes that cannot serve as labels
+        def _is_valid(candidate, name):
             if candidate.ndim == 0:
                 logger.warning(
-                    "Skipping '%s' from %s because it is a scalar", cand, npz_path
+                    "Skipping '%s' from %s because it is a scalar", name, npz_path
                 )
-                continue
+                return False
+            if candidate.shape[0] != num_samples:
+                logger.warning(
+                    "Skipping '%s' from %s because first dimension %s does not match %s samples",
+                    name,
+                    npz_path,
+                    candidate.shape[0],
+                    num_samples,
+                )
+                return False
+            # collapse trailing dimensions to detect empty feature axes
+            if candidate.ndim > 1:
+                trailing = int(np.prod(candidate.shape[1:]))
+                if trailing == 0:
+                    logger.warning(
+                        "Skipping '%s' from %s because it has zero columns", name, npz_path
+                    )
+                    return False
+            return True
 
+        label_candidates = []
+
+        if self.basis_id == 0:  # X-basis
+            _register_candidate(["obs_x", "logical_x"], label_candidates)
+        elif self.basis_id == 1:  # Z-basis
+            _register_candidate(["obs_z", "logical_z"], label_candidates)
+        else:  # Unknown basis
+            _register_candidate(["obs_x", "obs_z", "logical_x", "logical_z"], label_candidates)
+
+        _register_candidate(["obs", "label", "labels", "logical", "observables"], label_candidates)
+        _register_candidate([k for k in data.files if k != "data"], label_candidates)
+
+        label_key = None
+        for cand in label_candidates:
+            candidate = data[cand]
+            if not _is_valid(candidate, cand):
+                continue
             label_key = cand
             break
-        if label_key is None:                       # last resort
-            fallback_keys = [k for k in data.files if k != "data"]
-            for cand in fallback_keys:
-                candidate = data[cand]
 
-                if candidate.ndim > 1 and candidate.shape[1] == 0:
-                    logger.warning(
-                        "Skipping '%s' from %s because it has zero columns", cand, npz_path
-                    )
-                    continue
+        if label_key is None:
+            raise ValueError(
+                f"Could not find a valid label array in {npz_path}. Available keys: {data.files}"
+            )
 
-                if candidate.ndim == 0:
-                    logger.warning(
-                        "Skipping '%s' from %s because it is a scalar", cand, npz_path
-                    )
-                    continue
-
-                label_key = cand
-                break
-
-            if label_key is None:
-                raise ValueError(
-                    f"Could not find a valid label array in {npz_path}. Available keys: {data.files}"
-                )
-
-        y = data[label_key]                         # shape (N,) or (N,k)
+        y = data[label_key]
         if y.ndim > 1:
-            y = y[:, 0]                             # first observable
+            y = y.reshape(num_samples, -1)
+            y = y[:, 0]
 
         self.y = torch.tensor(y, dtype=torch.float32)
 

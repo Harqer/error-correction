@@ -251,14 +251,48 @@ def load_model(
     layers: int,
     device: torch.device,
 ) -> AlphaQubitDecoder:
-    state = torch.load(model_path, map_location=device)
-    if isinstance(state, dict):
-        for key in ("state_dict", "model_state", "model"):
-            if key in state and isinstance(state[key], dict):
-                state = state[key]
-                break
+    def _unwrap_state(obj):
+        if isinstance(obj, torch.nn.Module):
+            return obj.state_dict()
+        if isinstance(obj, dict):
+            for key in ("state_dict", "model_state", "model", "module"):
+                if key in obj:
+                    unwrapped = _unwrap_state(obj[key])
+                    if isinstance(unwrapped, dict):
+                        return unwrapped
+            return obj
+        return obj
 
-    model = AlphaQubitDecoder(num_features, hidden_dim, num_stabilizers, grid_size, num_heads=heads, num_layers=layers)
+    def _strip_module_prefix(state_dict: dict) -> dict:
+        if not isinstance(state_dict, dict):
+            return state_dict
+        if not state_dict:
+            return state_dict
+
+        prefix = "module."
+        if any(key.startswith(prefix) for key in state_dict):
+            factory = state_dict.__class__
+            stripped = factory()
+            for key, value in state_dict.items():
+                if key.startswith(prefix):
+                    stripped[key[len(prefix):]] = value
+                else:
+                    stripped[key] = value
+            return stripped
+        return state_dict
+
+    state = torch.load(model_path, map_location=device)
+    state = _unwrap_state(state)
+    state = _strip_module_prefix(state)
+
+    model = AlphaQubitDecoder(
+        num_features,
+        hidden_dim,
+        num_stabilizers,
+        grid_size,
+        num_heads=heads,
+        num_layers=layers,
+    )
     model.load_state_dict(state)
     model.to(device)
     model.eval()

@@ -295,6 +295,16 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=5e-4)
     parser.add_argument("--npu", action="store_true", help="Use available NPUs for training")
+    parser.add_argument(
+        "--device_index",
+        type=int,
+        default=None,
+        help=(
+            "Explicit device index to use when launching outside torch.distributed. "
+            "This allows external launchers to pin individual processes to specific "
+            "NPUs/GPUs without relying on visibility environment variables."
+        ),
+    )
     args = parser.parse_args()
 
     # ---------- Device and optional DDP initialization ----------
@@ -305,6 +315,8 @@ if __name__ == "__main__":
         if rank_env is not None and local_rank_env is not None:
             dist.init_process_group(backend="hccl", init_method="env://")
             local_rank = int(local_rank_env)
+        elif args.device_index is not None:
+            local_rank = args.device_index
         else:
             local_rank = 0
         # Pin this process to the given NPU
@@ -312,8 +324,13 @@ if __name__ == "__main__":
         device = torch.device(f"npu:{local_rank}")
     else:
         # Fallback to GPU or CPU
+        if torch.cuda.is_available():
+            gpu_index = args.device_index if args.device_index is not None else 0
+            torch.cuda.set_device(gpu_index)
+            device = torch.device(f"cuda:{gpu_index}")
+        else:
+            device = torch.device("cpu")
         local_rank = 0
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     print(f"Using device: {device}")
 

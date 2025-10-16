@@ -23,7 +23,7 @@ import socket
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from ai_models.model_mla import model_stem_from_npz
 
@@ -88,7 +88,7 @@ def main() -> None:
         device_count = torch.cuda.device_count()
 
     # Helper to build the command list for a single training invocation
-    def build_cmd(npz: Path) -> List[str]:
+    def build_cmd(npz: Path, device_index: Optional[int] = None) -> List[str]:
         cmd: List[str] = [
             "python",
             str(SCRIPT),
@@ -101,6 +101,8 @@ def main() -> None:
         ]
         if args.npu:
             cmd.append("--npu")
+        if device_index is not None:
+            cmd.extend(["--device_index", str(device_index)])
         return cmd
 
     # If more than one device is available we run training tasks in parallel.
@@ -117,17 +119,7 @@ def main() -> None:
         for idx, npz in enumerate(npz_files):
             device_idx = idx % device_count
             env = os.environ.copy()
-            cmd = build_cmd(npz)
-            # Set device visibility for the child process
-            if args.npu and torch is not None and hasattr(torch, "npu"):
-                env["NPU_VISIBLE_DEVICES"] = str(device_idx)
-                # Some training scripts historically accessed LOCAL_RANK directly
-                # when binding to a device.  Ensure it is populated so those
-                # scripts do not crash with KeyError when launched outside of
-                # torchrun.
-                env.setdefault("LOCAL_RANK", str(device_idx))
-            elif not args.npu and torch is not None and torch.cuda.is_available():
-                env["CUDA_VISIBLE_DEVICES"] = str(device_idx)
+            cmd = build_cmd(npz, device_idx)
             master_port = _allocate_master_port(allocated_ports)
             env.setdefault("MASTER_ADDR", "127.0.0.1")
             env["MASTER_PORT"] = str(master_port)
@@ -150,14 +142,8 @@ def main() -> None:
 
     # Serial fallback: one training process at a time
     for npz in npz_files:
-        cmd = build_cmd(npz)
+        cmd = build_cmd(npz, 0 if (args.npu or (torch is not None and torch.cuda.is_available())) else None)
         env = os.environ.copy()
-        if args.npu and torch is not None and hasattr(torch, "npu"):
-            # Pin to the first NPU for consistency
-            env["NPU_VISIBLE_DEVICES"] = "0"
-            env.setdefault("LOCAL_RANK", "0")
-        elif not args.npu and torch is not None and torch.cuda.is_available():
-            env["CUDA_VISIBLE_DEVICES"] = "0"
         print(f"Running: {' '.join(cmd)}")
         subprocess.run(cmd, check=True, env=env)
 

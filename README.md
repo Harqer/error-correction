@@ -116,14 +116,14 @@ python ai_models/train.py --config configs/dem.yaml
 - 可直接在 YAML 中调整超参数与噪声设置。
 - `ai_models/train.py` 默认将 `dem/si1000/pauli_plus/paper_aligned` 对应模型保存为仓库根目录下的 `alphaqubit_<模型类型>.pth`，可通过 `--model-path` 修改输出位置。
 
-批量训练 `simulated_data/` 中的所有实验：
+批量训练 `pretrain_data/`（或其它目录）中的所有实验：
 
 ```bash
 python run_training_all.py
 python run_training_all.py --npu  # 自动检测 Ascend NPU 并行调度
 ```
 
-`run_training_all.py` 会遍历 `simulated_data/*.npz`，为每个数据集调用 `ai_models/model_mla.py` 并把权重写入 `ai_models/models/NAME.pth`。
+`run_training_all.py` 会遍历 `pretrain_data/**/*.npz`，为每个数据集调用 `ai_models/model_mla.py` 并把权重写入 `ai_models/models/NAME.pth`。如需指向其它数据目录，可使用 `--data-root <path>`。脚本会自动串行调度任务；在支持 Ascend NPU 并传入 `--npu` 时，会检测可用设备并并行分配训练进程，因此无需单独的串行脚本。
 
 ### 4. 解码与评估
 

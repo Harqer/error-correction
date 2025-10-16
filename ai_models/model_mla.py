@@ -5,7 +5,7 @@ import argparse
 import hashlib
 from pathlib import Path
 from glob import glob
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import numpy as np
 import torch
@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # no matter which working directory was active when training was launched.
 DEFAULT_MODEL_DIR = Path(__file__).resolve().parent / "models"
 SIMULATED_DATA_DIR = PROJECT_ROOT / "simulated_data"
+PRETRAIN_DATA_DIR = PROJECT_ROOT / "pretrain_data"
 
 from ai_models.pauli_plus_dataset import PauliPlusDataset
 
@@ -191,9 +192,15 @@ def model_stem_from_npz(npz_path: str | os.PathLike[str]) -> str:
     path = Path(npz_path)
     resolved = path.resolve()
 
-    try:
-        relative = resolved.relative_to(SIMULATED_DATA_DIR)
-    except ValueError:
+    relative: Optional[Path] = None
+    for root in (SIMULATED_DATA_DIR, PRETRAIN_DATA_DIR):
+        try:
+            relative = resolved.relative_to(root)
+            break
+        except ValueError:
+            continue
+
+    if relative is None:
         relative = Path(path.name)
 
     stem_path = relative.with_suffix("")

@@ -88,7 +88,9 @@ def main() -> None:
         device_count = torch.cuda.device_count()
 
     # Helper to build the command list for a single training invocation
-    def build_cmd(npz: Path, device_index: Optional[int] = None) -> List[str]:
+    def build_cmd(
+        npz: Path, device_index: Optional[int] = None, tqdm_position: Optional[int] = None
+    ) -> List[str]:
         cmd: List[str] = [
             "python",
             str(SCRIPT),
@@ -103,6 +105,8 @@ def main() -> None:
             cmd.append("--npu")
         if device_index is not None:
             cmd.extend(["--device_index", str(device_index)])
+        if tqdm_position is not None:
+            cmd.extend(["--tqdm_position", str(max(tqdm_position, 0))])
         return cmd
 
     # If more than one device is available we run training tasks in parallel.
@@ -119,10 +123,11 @@ def main() -> None:
         for idx, npz in enumerate(npz_files):
             device_idx = idx % device_count
             env = os.environ.copy()
-            cmd = build_cmd(npz, device_idx)
+            cmd = build_cmd(npz, device_idx, device_idx)
             master_port = _allocate_master_port(allocated_ports)
             env.setdefault("MASTER_ADDR", "127.0.0.1")
             env["MASTER_PORT"] = str(master_port)
+            env.setdefault("PYTHONUNBUFFERED", "1")
             print(
                 "[async] starting on device "
                 f"{device_idx}: {' '.join(cmd)} (MASTER_PORT={master_port})"
@@ -142,8 +147,10 @@ def main() -> None:
 
     # Serial fallback: one training process at a time
     for npz in npz_files:
-        cmd = build_cmd(npz, 0 if (args.npu or (torch is not None and torch.cuda.is_available())) else None)
+        position = 0 if (args.npu or (torch is not None and torch.cuda.is_available())) else None
+        cmd = build_cmd(npz, position, position)
         env = os.environ.copy()
+        env.setdefault("PYTHONUNBUFFERED", "1")
         print(f"Running: {' '.join(cmd)}")
         subprocess.run(cmd, check=True, env=env)
 

@@ -293,10 +293,55 @@ def load_model(
         num_heads=heads,
         num_layers=layers,
     )
-    model.load_state_dict(state)
+
+    try:
+        model.load_state_dict(state)
+    except RuntimeError as exc:
+        patched = _maybe_patch_feature_projections(state, num_features)
+        if patched is None:
+            raise RuntimeError(
+                "Failed to load checkpoint and no compatible feature projection "
+                "upgrade path was found."
+            ) from exc
+        model.load_state_dict(patched)
+
     model.to(device)
     model.eval()
     return model
+
+
+def _maybe_patch_feature_projections(state: dict, expected_features: int) -> Optional[dict]:
+    """Back-fill missing ``embedder.feature_projs`` weights when possible."""
+
+    feature_keys = []
+    for key in state:
+        if not key.startswith("embedder.feature_projs."):
+            continue
+        parts = key.split(".")
+        if len(parts) < 4 or parts[3] not in {"weight", "bias"}:
+            continue
+        feature_keys.append(key)
+    if not feature_keys:
+        return None
+
+    present_indices = sorted({int(key.split(".")[2]) for key in feature_keys})
+    if present_indices == list(range(expected_features)):
+        return None
+
+    if present_indices == list(range(expected_features - 1)):
+        template_idx = present_indices[-1]
+        missing_idx = expected_features - 1
+
+        patched_state = state.__class__(state)
+        for suffix in ("weight", "bias"):
+            template_key = f"embedder.feature_projs.{template_idx}.{suffix}"
+            missing_key = f"embedder.feature_projs.{missing_idx}.{suffix}"
+            if template_key not in state:
+                return None
+            patched_state[missing_key] = state[template_key].clone()
+        return patched_state
+
+    return None
 
 
 def compute_metrics(probabilities: torch.Tensor, labels: Optional[torch.Tensor]) -> dict:

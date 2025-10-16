@@ -60,12 +60,31 @@ def _run(cmd, cwd=None):
     return res.stdout
 
 def _snapshot(dirpath: Path):
+    """Return a mapping of file path -> (mtime_ns, size)."""
+
     dirpath.mkdir(parents=True, exist_ok=True)
-    return {p.resolve() for p in dirpath.rglob("*") if p.is_file()}
+    snap = {}
+    for p in dirpath.rglob("*"):
+        if not p.is_file():
+            continue
+        try:
+            stat = p.stat()
+        except FileNotFoundError:
+            # File vanished between rglob() and stat(); skip it.
+            continue
+        snap[p.resolve()] = (stat.st_mtime_ns, stat.st_size)
+    return snap
+
 
 def _new_files(dirpath: Path, before):
+    """Return files that are new or modified compared to ``before`` snapshot."""
+
     after = _snapshot(dirpath)
-    return sorted(list(after - before))
+    changed = []
+    for path, meta in after.items():
+        if path not in before or before[path] != meta:
+            changed.append(path)
+    return sorted(changed)
 
 def _parse_saved_paths(stdout_text: str):
     # generate_data.py prints the save paths; parse them so we can move & rename deterministically.

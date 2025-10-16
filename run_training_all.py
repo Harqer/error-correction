@@ -3,7 +3,7 @@
 run_training_all.py
 
 Enhanced training launcher for ALPHAQUBIT.  It iterates over all `.npz`
-files under ``simulated_data`` and trains a model on each using
+files under ``pretrain_data`` (by default) and trains a model on each using
 ``ai_models/model_mla.py``.  When running with the ``--npu`` flag and
 multiple Ascend NPUs are available the launcher dispatches multiple
 training processes concurrently, pinning each process to a single device
@@ -38,7 +38,6 @@ except ImportError:
 EPOCHS: str = "20"
 BATCH_SIZE: str = "16"
 SCRIPT: Path = Path("ai_models/model_mla.py")
-DATA_DIR: Path = Path("simulated_data")
 MODEL_DIR: Path = Path("ai_models") / "models"
 
 
@@ -60,12 +59,22 @@ def main() -> None:
             "across them in parallel."
         ),
     )
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=Path("pretrain_data"),
+        help=(
+            "Directory containing .npz training datasets. The tree is searched "
+            "recursively; override this if your data lives elsewhere."
+        ),
+    )
     args = parser.parse_args()
 
     # Collect all npz files in the data directory
-    npz_files: List[Path] = sorted(DATA_DIR.glob("*.npz"))
+    data_root = args.data_root
+    npz_files: List[Path] = sorted(data_root.rglob("*.npz")) if data_root.is_dir() else []
     if not npz_files:
-        print(f"No .npz files found in {DATA_DIR}")
+        print(f"No .npz files found in {data_root}")
         return
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)

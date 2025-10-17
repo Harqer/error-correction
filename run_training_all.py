@@ -63,19 +63,36 @@ def main() -> None:
     parser.add_argument(
         "--data-root",
         type=Path,
-        default=Path("pretrain_data"),
+        action="append",
+        dest="data_roots",
         help=(
-            "Directory containing .npz training datasets. The tree is searched "
-            "recursively; override this if your data lives elsewhere."
+            "Directory containing .npz training datasets. May be supplied "
+            "multiple times. By default the script searches pretrain_data/ "
+            "followed by simulated_data/."
         ),
     )
     args = parser.parse_args()
 
-    # Collect all npz files in the data directory
-    data_root = args.data_root
-    all_npz: List[Path] = sorted(data_root.rglob("*.npz")) if data_root.is_dir() else []
+    # Collect all npz files from the requested data directories
+    default_roots = [Path("pretrain_data"), Path("simulated_data")]
+    data_roots: List[Path] = args.data_roots or default_roots
+    searched_roots: List[Path] = []
+    all_npz: List[Path] = []
+    seen: Set[Path] = set()
+    for root in data_roots:
+        searched_roots.append(root)
+        if not root.is_dir():
+            print(f"No dataset directory found at {root}; skipping")
+            continue
+        for npz in sorted(root.rglob("*.npz")):
+            resolved = npz.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            all_npz.append(npz)
     if not all_npz:
-        print(f"No .npz files found in {data_root}")
+        joined = ", ".join(str(root) for root in searched_roots)
+        print(f"No .npz files found in any of: {joined}")
         return
 
     npz_files: List[Path] = []
@@ -90,7 +107,8 @@ def main() -> None:
         npz_files.append(npz)
 
     if not npz_files:
-        print("No datasets with valid labels found; aborting")
+        joined = ", ".join(str(root) for root in searched_roots)
+        print(f"No datasets with valid labels found under {joined}; aborting")
         return
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)

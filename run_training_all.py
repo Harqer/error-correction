@@ -67,14 +67,15 @@ def main() -> None:
         dest="data_roots",
         help=(
             "Directory containing .npz training datasets. May be supplied "
-            "multiple times. By default the script searches pretrain_data/ "
-            "followed by simulated_data/."
+            "multiple times. By default the script searches only pretrain_data/. "
+            "Pass this flag to include alternative locations such as "
+            "simulated_data/."
         ),
     )
     args = parser.parse_args()
 
     # Collect all npz files from the requested data directories
-    default_roots = [Path("pretrain_data"), Path("simulated_data")]
+    default_roots = [Path("pretrain_data")]
     data_roots: List[Path] = args.data_roots or default_roots
     searched_roots: List[Path] = []
     all_npz: List[Path] = []

@@ -228,6 +228,14 @@ def get_model_name_from_path(npz_path: str | os.PathLike[str]) -> Path:
     return DEFAULT_MODEL_DIR / f"{stem}.pth"
 
 
+def _format_device_label(device: torch.device) -> str:
+    """Return a short label describing ``device`` suitable for log prefixes."""
+
+    if device.index is not None:
+        return f"{device.type}:{device.index}"
+    return device.type
+
+
 def train(
     model,
     tr_loader,
@@ -259,13 +267,15 @@ def train(
 
     best_val = float('inf')
     last_save_time = datetime.now()
+    device_label = _format_device_label(device)
+    log_prefix = f"[{device_label}]"
     for epoch in range(1, epochs+1):
         model.train()
         total_loss = 0
 
         pbar = tqdm(
             tr_loader,
-            desc=f"Epoch {epoch}/{epochs}",
+            desc=f"{log_prefix} Epoch {epoch}/{epochs}",
             position=max(tqdm_position, 0),
             leave=False,
         )
@@ -279,15 +289,17 @@ def train(
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             scheduler.step()
-            
+
             total_loss += loss.item()
             pbar.set_postfix(loss=loss.item())
             current_time = datetime.now()
             if current_time - last_save_time >= timedelta(minutes=10):
                 torch.save(model.state_dict(), model_save_path)
-                print(f"\nCheckpoint saved to {model_save_path} at {current_time}")
+                tqdm.write(
+                    f"{log_prefix} Checkpoint saved to {model_save_path} at {current_time}"
+                )
                 last_save_time = current_time
-        
+
         model.eval()
         val_loss = 0
         correct = 0
@@ -298,23 +310,23 @@ def train(
                 val_loss += criterion(outputs, yb).item()
                 preds = (torch.sigmoid(outputs) > 0.5).float()
                 correct += (preds == yb).sum().item()
-        
+
         avg_loss = total_loss / len(tr_loader)
         val_loss = val_loss / len(va_loader)
         val_acc = correct / len(va_loader.dataset)
-        
+
         # ``leave`` above keeps the terminal output compact while still allowing
         # multiple devices to display progress bars simultaneously.  To avoid
         # losing a summary per epoch we emit a dedicated line here.
-        print(
-            f"Epoch {epoch}: Train Loss: {avg_loss:.4f}, "
+        tqdm.write(
+            f"{log_prefix} Epoch {epoch}: Train Loss: {avg_loss:.4f}, "
             f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
         )
-        
+
         if val_loss < best_val:
             best_val = val_loss
             torch.save(model.state_dict(), model_save_path)
-            print(f"Best model saved to {model_save_path}")
+            tqdm.write(f"{log_prefix} Best model saved to {model_save_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -369,7 +381,8 @@ if __name__ == "__main__":
         else:
             device = torch.device("cpu")
         local_rank = 0
-    
+
+    device_label = _format_device_label(device)
     print(f"Using device: {device}")
 
     # Get basis from filename
@@ -427,4 +440,4 @@ if __name__ == "__main__":
         model_save_path,
         tqdm_position=args.tqdm_position,
     )
-    print(f"Training complete. Model saved to {model_save_path}")
+    tqdm.write(f"[{device_label}] Training complete. Model saved to {model_save_path}")

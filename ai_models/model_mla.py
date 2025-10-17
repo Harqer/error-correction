@@ -193,9 +193,11 @@ def model_stem_from_npz(npz_path: str | os.PathLike[str]) -> str:
     resolved = path.resolve()
 
     relative: Optional[Path] = None
-    for root in (SIMULATED_DATA_DIR, PRETRAIN_DATA_DIR):
+    origin_label: Optional[str] = None
+    for root, label in ((SIMULATED_DATA_DIR, "simulated"), (PRETRAIN_DATA_DIR, "pretrain")):
         try:
             relative = resolved.relative_to(root)
+            origin_label = label
             break
         except ValueError:
             continue
@@ -204,18 +206,21 @@ def model_stem_from_npz(npz_path: str | os.PathLike[str]) -> str:
         relative = Path(path.name)
 
     stem_path = relative.with_suffix("")
-    parts = list(stem_path.parts)
+    parts = [part for part in stem_path.parts if part not in {"", "."}]
     if parts:
         parts[-1] = _strip_samples_prefix(parts[-1])
+
+    if origin_label:
+        parts.insert(0, origin_label)
 
     raw = "/".join(parts) if parts else stem_path.as_posix()
     if not raw:
         raw = path.with_suffix("").name or "model"
 
     safe = raw.replace("/", "_")
-    if "/" in raw:
-        digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
-        safe = f"{safe}__{digest}"
+    digest_source = resolved.as_posix()
+    digest = hashlib.sha1(digest_source.encode("utf-8")).hexdigest()[:8]
+    safe = f"{safe}__{digest}"
 
     return safe
 

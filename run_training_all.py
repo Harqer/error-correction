@@ -166,6 +166,14 @@ def main() -> None:
         for idx, npz in enumerate(npz_files):
             device_idx = idx % device_count
             env = os.environ.copy()
+
+            if args.npu:
+                # Ascend PyTorch honours these environment variables when selecting
+                # a default device.  Setting them ensures libraries that bypass
+                # ``torch.npu.set_device`` still remain on the assigned device.
+                env["ASCEND_DEVICE_ID"] = str(device_idx)
+                env.setdefault("DEVICE_ID", str(device_idx))
+
             cmd = build_cmd(npz, device_idx, device_idx)
             master_port = _allocate_master_port(allocated_ports)
             env.setdefault("MASTER_ADDR", "127.0.0.1")

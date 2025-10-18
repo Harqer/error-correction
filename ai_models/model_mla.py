@@ -1,45 +1,17 @@
-import os
+import re
 import math
-import sys
 import argparse
-import hashlib
 from pathlib import Path
-from glob import glob
-from typing import List, Tuple, Optional
-
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.distributed as dist
-from torch.utils.data import Dataset, DataLoader, ConcatDataset, DistributedSampler
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-import torch
-import time
 from datetime import datetime, timedelta
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-# All checkpoints trained via this script are stored in ai_models/models/ so
-# that helper utilities such as run_decode_all.py can discover them reliably
-# no matter which working directory was active when training was launched.
-DEFAULT_MODEL_DIR = Path(__file__).resolve().parent / "models"
-SIMULATED_DATA_DIR = PROJECT_ROOT / "simulated_data"
-PRETRAIN_DATA_DIR = PROJECT_ROOT / "pretrain_data"
-
 from ai_models.pauli_plus_dataset import PauliPlusDataset
-
-def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
-    ndim = x.ndim
-    assert 0 <= 1 < ndim
-    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
-    return freqs_cis.view(*shape)
-
-
 from mla.core import DeepSeekMLA
-  
+
+
 class StabilizerEmbedder(nn.Module):
     def __init__(self, num_features, hidden_dim, num_stabilizers):
         super().__init__()
@@ -50,8 +22,7 @@ class StabilizerEmbedder(nn.Module):
         self.final_on = nn.Embedding(1, hidden_dim)
         self.final_off = nn.Embedding(1, hidden_dim)
         self.norm = nn.LayerNorm(hidden_dim)
-        
-        # Initialize properly
+
         for proj in self.feature_projs:
             nn.init.xavier_uniform_(proj.weight)
             nn.init.constant_(proj.bias, 0)
@@ -60,17 +31,17 @@ class StabilizerEmbedder(nn.Module):
     def forward(self, x, final_mask):
         B, S, _ = x.shape
         h = torch.zeros(B, S, self.index_embed.embedding_dim, device=x.device)
-        
+
         for i, proj in enumerate(self.feature_projs):
             h += proj(x[..., i:i+1])
-            
+
         h += self.index_embed(torch.arange(S, device=x.device))
-        
-        # Final mask embeddings
+
         h += (final_mask == 1).unsqueeze(-1) * self.final_on(torch.tensor(0, device=x.device))
         h += (final_mask == 2).unsqueeze(-1) * self.final_off(torch.tensor(0, device=x.device))
-        
+
         return self.norm(h)
+
 
 class SyndromeTransformerLayer(nn.Module):
     def __init__(self, hidden_dim, num_heads, num_stabilizers, grid_size):
@@ -88,7 +59,8 @@ class SyndromeTransformerLayer(nn.Module):
         x = x + self.attn(self.norm1(x))
         x = x + self.ffn(self.norm2(x))
         return x
-    
+
+
 class SyndromeTransformer(nn.Module):
     def __init__(self, hidden_dim, num_heads, num_layers, num_stabilizers, grid_size):
         super().__init__()
@@ -102,6 +74,7 @@ class SyndromeTransformer(nn.Module):
             x = layer(x, events, prev_events)
         return x
 
+
 class ReadoutNetwork(nn.Module):
     def __init__(self, hidden_dim, grid_size):
         super().__init__()
@@ -113,7 +86,6 @@ class ReadoutNetwork(nn.Module):
             nn.Linear(hidden_dim, 1)
         )
 
-        # Initialize
         nn.init.xavier_uniform_(self.conv.weight)
         nn.init.constant_(self.conv.bias, 0)
         for layer in self.mlp:
@@ -124,26 +96,24 @@ class ReadoutNetwork(nn.Module):
     def forward(self, x, basis):
         B, S, D = x.shape
         d = self.grid_size
-        
-        # Add dummy stabilizer and reshape
+
         x = torch.cat([x.new_zeros(B, 1, D), x], dim=1)
         x = x.transpose(1, 2).view(B, D, d+1, d+1)
-        
-        # Convolution
-        x = self.conv(x).permute(0, 2, 3, 1)  # [B, d, d, D]
-        
-        # Line-wise readout
+
+        x = self.conv(x).permute(0, 2, 3, 1)
+
         outputs = []
         for i in range(B):
-            if basis[i] == 0:  # X basis
-                lines = x[i].mean(dim=1)  # [d, D]
-            else:  # Z basis
-                lines = x[i].mean(dim=0)  # [d, D]
-                
-            logits = self.mlp(lines).squeeze()  # [d]
+            if basis[i] == 0:
+                lines = x[i].mean(dim=1)
+            else:
+                lines = x[i].mean(dim=0)
+
+            logits = self.mlp(lines).squeeze()
             outputs.append(logits.mean())
-            
+
         return torch.stack(outputs)
+
 
 class AlphaQubitDecoder(nn.Module):
     def __init__(self, num_features, hidden_dim, num_stabilizers, grid_size, num_heads=8, num_layers=12):
@@ -151,8 +121,7 @@ class AlphaQubitDecoder(nn.Module):
         self.embedder = StabilizerEmbedder(num_features, hidden_dim, num_stabilizers)
         self.transformer = SyndromeTransformer(hidden_dim, num_heads, num_layers, num_stabilizers, grid_size)
         self.readout = ReadoutNetwork(hidden_dim, grid_size)
-        
-        # Initialize output layer
+
         for layer in self.readout.mlp:
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_uniform_(layer.weight)
@@ -162,131 +131,62 @@ class AlphaQubitDecoder(nn.Module):
         B, R, S, F = inputs.shape
         state = torch.zeros(B, S, self.embedder.index_embed.embedding_dim, device=inputs.device)
         prev_events = torch.zeros(B, S, device=inputs.device)
-        
-        # Process each round
+
         for r in range(R):
             x = inputs[:, r]
             emb = self.embedder(x, final_mask if r == R-1 else torch.zeros_like(final_mask))
             state = (state + emb) / math.sqrt(2.0)
             state = self.transformer(state, x[..., 0], prev_events)
             prev_events = x[..., 0]
-            
+
         return self.readout(state, basis)
 
+
 def get_basis_from_filename(filename):
-    """Extract basis from filename (0 for X, 1 for Z, -1 if unknown)"""
     name = filename.lower()
     if "_bx_" in name:
         return 0
-    elif "_bz_" in name:
+    if "_bz_" in name:
         return 1
     return -1
 
-def _strip_samples_prefix(name: str) -> str:
-    return name[len("samples_") :] if name.startswith("samples_") else name
 
-
-def model_stem_from_npz(npz_path: str | os.PathLike[str]) -> str:
-    """Return a deterministic, collision-resistant model stem for ``npz_path``."""
-
-    path = Path(npz_path)
-    resolved = path.resolve()
-
-    relative: Optional[Path] = None
-    origin_label: Optional[str] = None
-    for root, label in ((SIMULATED_DATA_DIR, "simulated"), (PRETRAIN_DATA_DIR, "pretrain")):
+def model_stem_from_npz(npz_path) -> str:
+    p = Path(npz_path)
+    stem = p.stem
+    if stem.startswith("samples_"):
+        stem = stem[len("samples_"):]
+    for anchor in ("pretrain_data", "simulated_data"):
         try:
-            relative = resolved.relative_to(root)
-            origin_label = label
-            break
-        except ValueError:
+            rel = p.parent.resolve().relative_to(Path(anchor).resolve())
+            if str(rel) != ".":
+                stem = "_".join(list(rel.parts) + [stem])
+                break
+        except Exception:
             continue
-
-    if relative is None:
-        relative = Path(path.name)
-
-    stem_path = relative.with_suffix("")
-    parts = [part for part in stem_path.parts if part not in {"", "."}]
-    if parts:
-        parts[-1] = _strip_samples_prefix(parts[-1])
-
-    if origin_label:
-        parts.insert(0, origin_label)
-
-    raw = "/".join(parts) if parts else stem_path.as_posix()
-    if not raw:
-        raw = path.with_suffix("").name or "model"
-
-    safe = raw.replace("/", "_")
-    digest_source = resolved.as_posix()
-    digest = hashlib.sha1(digest_source.encode("utf-8")).hexdigest()[:8]
-    safe = f"{safe}__{digest}"
-
-    return safe
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem)
+    return stem
 
 
-def get_model_name_from_path(npz_path: str | os.PathLike[str]) -> Path:
-    """Derive a checkpoint path inside ``ai_models/models`` for the dataset."""
-
-    DEFAULT_MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    stem = model_stem_from_npz(npz_path)
-    return DEFAULT_MODEL_DIR / f"{stem}.pth"
-
-
-def _format_device_label(device: torch.device) -> str:
-    """Return a short label describing ``device`` suitable for log prefixes."""
-
-    if device.index is not None:
-        return f"{device.type}:{device.index}"
-    return device.type
-
-
-def train(
-    model,
-    tr_loader,
-    va_loader,
-    epochs,
-    lr,
-    device,
-    model_save_path: Path,
-    *,
-    tqdm_position: int = 0,
-):
+def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path, tqdm_position: int = 0):
     model_save_path = Path(model_save_path)
     model_save_path.parent.mkdir(parents=True, exist_ok=True)
 
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
-    criterion = nn.BCEWithLogitsLoss()
-
-    if epochs <= 0:
-        print("Skipping training because epochs <= 0")
-        return
-
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer,
-        max_lr=lr,
-        steps_per_epoch=len(tr_loader),
-        epochs=epochs
+        optimizer, max_lr=lr, steps_per_epoch=len(tr_loader), epochs=epochs
     )
-
-    best_val = float('inf')
+    criterion = nn.BCEWithLogitsLoss()
+    best_val = float("inf")
     last_save_time = datetime.now()
-    device_label = _format_device_label(device)
-    log_prefix = f"[{device_label}]"
-    for epoch in range(1, epochs+1):
+
+    for epoch in range(1, epochs + 1):
         model.train()
         total_loss = 0
-
-        pbar = tqdm(
-            tr_loader,
-            desc=f"{log_prefix} Epoch {epoch}/{epochs}",
-            position=max(tqdm_position, 0),
-            leave=False,
-        )
+        pbar = tqdm(tr_loader, desc=f"Epoch {epoch}/{epochs}", position=max(int(tqdm_position), 0))
         for (xb, basis, mask), yb in pbar:
             xb, basis, mask, yb = xb.to(device), basis.to(device), mask.to(device), yb.to(device)
-            
             optimizer.zero_grad()
             outputs = model(xb, basis, mask)
             loss = criterion(outputs, yb)
@@ -300,9 +200,6 @@ def train(
             current_time = datetime.now()
             if current_time - last_save_time >= timedelta(minutes=10):
                 torch.save(model.state_dict(), model_save_path)
-                tqdm.write(
-                    f"{log_prefix} Checkpoint saved to {model_save_path} at {current_time}"
-                )
                 last_save_time = current_time
 
         model.eval()
@@ -319,19 +216,14 @@ def train(
         avg_loss = total_loss / len(tr_loader)
         val_loss = val_loss / len(va_loader)
         val_acc = correct / len(va_loader.dataset)
-
-        # ``leave`` above keeps the terminal output compact while still allowing
-        # multiple devices to display progress bars simultaneously.  To avoid
-        # losing a summary per epoch we emit a dedicated line here.
-        tqdm.write(
-            f"{log_prefix} Epoch {epoch}: Train Loss: {avg_loss:.4f}, "
-            f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
+        print(
+            f"Epoch {epoch}: Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
         )
 
         if val_loss < best_val:
             best_val = val_loss
             torch.save(model.state_dict(), model_save_path)
-            tqdm.write(f"{log_prefix} Best model saved to {model_save_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -340,101 +232,64 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=5e-4)
     parser.add_argument("--npu", action="store_true", help="Use available NPUs for training")
+    parser.add_argument("--device_index", type=int, default=None, help="(Multi-process) device index when using --npu")
+    parser.add_argument("--tqdm_position", type=int, default=0, help="Row position for tqdm progress (multi-run)")
     parser.add_argument(
-        "--device_index",
-        type=int,
+        "--model-save-path",
+        type=str,
         default=None,
-        help=(
-            "Explicit device index to use when launching outside torch.distributed. "
-            "This allows external launchers to pin individual processes to specific "
-            "NPUs/GPUs without relying on visibility environment variables."
-        ),
-    )
-    parser.add_argument(
-        "--tqdm_position",
-        type=int,
-        default=0,
-        help=(
-            "Optional tqdm progress-bar position.  When running multiple training "
-            "processes concurrently this should be unique per device so that "
-            "their progress bars can render simultaneously."
-        ),
+        help="Explicit checkpoint path (.pth). Defaults to ai_models/models/<stem>.pth",
     )
     args = parser.parse_args()
 
-    # ---------- Device and optional DDP initialization ----------
-    if args.npu and hasattr(torch, "npu") and torch.npu.is_available():
-        # Setup DDP on NPUs when launched via torchrun/torch.distributed
-        rank_env = os.environ.get("RANK")
-        local_rank_env = os.environ.get("LOCAL_RANK")
-        if rank_env is not None and local_rank_env is not None:
-            dist.init_process_group(backend="hccl", init_method="env://")
-            local_rank = int(local_rank_env)
-        elif args.device_index is not None:
-            local_rank = args.device_index
-        else:
-            local_rank = 0
-        # Pin this process to the given NPU
-        torch.npu.set_device(local_rank)
-        device = torch.device(f"npu:{local_rank}")
+    use_npu = bool(args.npu and hasattr(torch, "npu") and getattr(torch.npu, "is_available", lambda: False)())
+    if use_npu:
+        idx = int(args.device_index or 0)
+        torch.npu.set_device(idx)
+        device = torch.device("npu")
     else:
-        # Fallback to GPU or CPU
         if torch.cuda.is_available():
-            gpu_index = args.device_index if args.device_index is not None else 0
-            torch.cuda.set_device(gpu_index)
-            device = torch.device(f"cuda:{gpu_index}")
+            idx = int(args.device_index or 0)
+            torch.cuda.set_device(idx)
+            device = torch.device(f"cuda:{idx}")
         else:
             device = torch.device("cpu")
-        local_rank = 0
-
-    device_label = _format_device_label(device)
     print(f"Using device: {device}")
 
-    # Get basis from filename
     basis = get_basis_from_filename(args.npz_file)
     if basis == -1:
         print("Warning: Could not determine basis from filename, defaulting to X basis (0)")
         basis = 0
-    
-    # Create dataset from single NPZ file
+
     dataset = PauliPlusDataset(args.npz_file, basis)
-    
     n = len(dataset)
+    if n < 2:
+        raise RuntimeError("Dataset must contain at least two samples for train/val split")
     idx = torch.randperm(n)
-    split = int(0.9 * n)
-    
+    split = max(1, int(0.9 * n))
+
     tr_ds = torch.utils.data.Subset(dataset, idx[:split])
     va_ds = torch.utils.data.Subset(dataset, idx[split:])
-    
-    sampler = DistributedSampler(tr_ds) if dist.is_initialized() else None
-    tr_loader = DataLoader(
-        tr_ds,
-        batch_size=args.batch_size,
-        sampler=sampler,
-        shuffle=(sampler is None),
-        num_workers=4,
-        pin_memory=True
-    )
+
+    pin_memory = device.type in {"cuda", "npu"}
+    tr_loader = DataLoader(tr_ds, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=pin_memory)
     va_loader = DataLoader(va_ds, batch_size=args.batch_size)
 
     (x0, _, _), _ = dataset[0]
     R, S, F = x0.shape
     d = int(math.sqrt(S + 1))
     grid_size = d - 1
-    
     print(f"Rounds={R} Stabilisers={S} Features={F} grid={d}×{d}")
-    
-    model = AlphaQubitDecoder(F, 256, S, grid_size, num_heads=8, num_layers=12).to(device)
-    if dist.is_initialized():
-        model = torch.nn.parallel.DistributedDataParallel(
-            model,
-            device_ids=[local_rank],
-            broadcast_buffers=False
-        )
 
-    # Generate model save path from input file name
-    model_save_path = get_model_name_from_path(args.npz_file)
-    
+    model = AlphaQubitDecoder(F, 256, S, grid_size, num_heads=8, num_layers=12).to(device)
+
+    if args.model_save_path:
+        model_save_path = Path(args.model_save_path)
+    else:
+        model_dir = Path(__file__).resolve().parent / "models"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_save_path = model_dir / f"{model_stem_from_npz(args.npz_file)}.pth"
+
     train(
         model,
         tr_loader,
@@ -442,7 +297,7 @@ if __name__ == "__main__":
         args.epochs,
         args.lr,
         device,
-        model_save_path,
+        str(model_save_path),
         tqdm_position=args.tqdm_position,
     )
-    tqdm.write(f"[{device_label}] Training complete. Model saved to {model_save_path}")
+    print(f"Training complete.\nModel saved to {model_save_path}")

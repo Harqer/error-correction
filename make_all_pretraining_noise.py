@@ -2,11 +2,12 @@
 """
 Generate ALL pretraining noise datasets for ALPHAQUBIT in one go.
 
-Produces:
+Produces (example):
   pretrain_data/
-    dem/         # DEM syndromes/logicals (.npy)
-    si1000/      # SI1000 syndromes/logicals (.npy), optionally for a grid of p
-    soft/        # Soft ("I/Q") readout .npz produced by google_qec_simulator
+    dem/                            # DEM syndromes/logicals (.npy)
+    si1000/                         # SI1000 syndromes/logicals (.npy), optionally for a grid of p
+    <experiment_A>/samples_*.npz    # Soft ("I/Q") readout .npz produced by google_qec_simulator
+    <experiment_B>/samples_*.npz
 
 Requirements: run from the repo root (where generate_data.py is).
 Refs:
@@ -198,8 +199,8 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
 
     if RUN_CREATE_ALL.exists():
         # The README shows this wrapper for generating .npz across circuits under simulated_data/.
-        # It doesn't document flags; just call it and let it drive google_qec_simulator.
-        _run([sys.executable, str(RUN_CREATE_ALL)])
+        # Preserve per-experiment folders so downstream training can keep datasets separate.
+        _run([sys.executable, str(RUN_CREATE_ALL), "--layout", "by_experiment"])
     else:
         # Fallback: call google_qec_simulator/main.py directly on a plausible experiment dir.
         # README shows: python google_qec_simulator/main.py path/to/exp --shots N --device <cpu|cuda|npu>
@@ -218,9 +219,19 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
         print("[SOFT] No new .npz detected under simulated_data/. "
               "Ensure run_create_all_samples.py or google_qec_simulator wrote outputs.", file=sys.stderr)
     for src in npzs:
-        dst = dest_root / src.name
+        try:
+            rel = src.resolve().relative_to(SIMDATA_DIR.resolve())
+        except Exception:
+            rel = Path(src.name)
+        dst = dest_root / rel
         _safe_copy(src, dst)
-        manifest.append({"kind": "soft", "shots": soft_shots, "device": device, "files": [str(dst)]})
+        manifest.append({
+            "kind": "soft",
+            "shots": soft_shots,
+            "device": device,
+            "files": [str(dst)],
+            "experiment": str(dst.parent.relative_to(dest_root)),
+        })
 
 def main():
     parser = argparse.ArgumentParser(description="Generate ALL pretraining noise datasets for ALPHAQUBIT.")
@@ -247,7 +258,7 @@ def main():
     out_root = REPO_ROOT / args.out_dir
     dem_dir = out_root / "dem"
     si1k_dir = out_root / "si1000"
-    soft_dir = out_root / "soft"
+    soft_dir = out_root
     out_root.mkdir(parents=True, exist_ok=True)
     manifest = []
 

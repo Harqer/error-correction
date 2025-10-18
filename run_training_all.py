@@ -76,9 +76,10 @@ def main() -> None:
         dest="data_roots",
         help=(
             "Directory containing .npz training datasets. May be supplied "
-            "multiple times. By default the script searches only pretrain_data/. "
-            "Pass this flag to include alternative locations such as "
-            "simulated_data/."
+            "multiple times. Without this flag the script searches both "
+            "pretrain_data/ and simulated_data/. Providing --data-root "
+            "overrides the defaults, so use it repeatedly to enumerate all "
+            "desired dataset roots."
         ),
     )
     args = parser.parse_args()

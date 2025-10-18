@@ -87,7 +87,7 @@ python make_all_pretraining_noise.py \
   --out-dir pretrain_data
 ```
 
-该配置对应约 $8.5\times10^6$ 条离散综合样本与 4.0M 次 soft shots，需要约 15 GB（布尔综合）+1.1 GB（soft shots）存储。如资源受限，可按比例缩放各 `--*-samples`，保持不同噪声类型的相对比重。
+该脚本会依次调用 `generate_data.py`（DEM/SI1000）与 `run_create_all_samples.py`（soft/IQ），并把生成的 `.npy`/`.npz` 文件收集到 `--out-dir` 指定的目录，同时写出 `MANIFEST.json`（记录时间戳与所有产物）。上述配置对应约 $8.5\times10^6$ 条离散综合样本与 4.0M 次 soft shots，需要约 15 GB（布尔综合）+1.1 GB（soft shots）存储。如资源受限，可按比例缩放各 `--*-samples`，保持不同噪声类型的相对比重。
 
 #### 批量生成实验数据
 
@@ -125,9 +125,10 @@ python ai_models/train.py --config configs/dem.yaml
 ```bash
 python run_training_all.py
 python run_training_all.py --npu  # 自动检测 Ascend NPU 并行调度
+python run_training_all.py --epochs 1 --batch-size 32 --max-samples 1024  # 本地快速冒烟
 ```
 
-`run_training_all.py` 会遍历 `pretrain_data/**/*.npz`，为每个数据集调用 `ai_models/model_mla.py` 并把权重写入 `ai_models/models/NAME.pth`。如需指向其它数据目录，可使用 `--data-root <path>`（例如指向 `simulated_data/`）。脚本会自动串行调度任务；在支持 Ascend NPU 并传入 `--npu` 时，会检测可用设备并并行分配训练进程，因此无需单独的串行脚本。
+`run_training_all.py` 默认会同时遍历 `pretrain_data/**/*.npz` 与 `simulated_data/**/*.npz`，为每个数据集调用 `ai_models/model_mla.py` 并把权重写入 `ai_models/models/NAME.pth`。通过 `--epochs`、`--batch-size` 与 `--max-samples` 可以快速调整训练时长；其中 `--max-samples` 会在加载数据集后裁剪样本数，便于在 CPU 上进行冒烟测试。如需自定义数据目录，可重复传入 `--data-root <path>`，该选项会覆盖默认搜索路径（因此若要保留默认目录，请一并显式给出）。脚本会自动串行调度任务；在支持 Ascend NPU 并传入 `--npu` 时，会检测可用设备并并行分配训练进程，因此无需单独的串行脚本。
 
 ### 4. 解码与评估
 

@@ -134,17 +134,12 @@ def find_label_key(npz_path: os.PathLike[str] | str, basis_id: int) -> Optional[
 
     try:
         with np.load(npz_path) as data:
-            candidates = ["obs", "label", "labels", "logical", "logical_error"]
-            if basis_id == 0:
-                candidates = ["obs_x", "logical_x"] + candidates
-            elif basis_id == 1:
-                candidates = ["obs_z", "logical_z"] + candidates
-            for cand in candidates:
-                if cand in data:
-                    return cand
+            if "data" not in data:
+                return None
+            num_samples = data["data"].shape[0]
+            return choose_label_key(data, num_samples, basis_id, str(npz_path))
     except Exception:
         return None
-    return None
 
 
 class PauliPlusDataset(Dataset):

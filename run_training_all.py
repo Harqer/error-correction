@@ -28,9 +28,8 @@ except ImportError:
 
 # Training parameters.  Strings are used here as these values are passed
 # directly on the command line to the child process.
-EPOCHS: str = "20"
-BATCH_SIZE: str = "16"
-SCRIPT: Path = Path("ai_models/model_mla.py")
+DEFAULT_EPOCHS: int = 20
+DEFAULT_BATCH_SIZE: int = 16
 MODEL_DIR: Path = Path("ai_models") / "models"
 
 
@@ -53,21 +52,40 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--epochs",
+        type=int,
+        default=DEFAULT_EPOCHS,
+        help="Number of training epochs to pass through each dataset (default: 20)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help="Mini-batch size for each training run (default: 16)",
+    )
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=None,
+        help="Limit the number of samples loaded per dataset when invoking the trainer",
+    )
+    parser.add_argument(
         "--data-root",
         type=Path,
         action="append",
         dest="data_roots",
         help=(
             "Directory containing .npz training datasets. May be supplied "
-            "multiple times. By default the script searches only pretrain_data/. "
-            "Pass this flag to include alternative locations such as "
-            "simulated_data/."
+            "multiple times. Without this flag the script searches both "
+            "pretrain_data/ and simulated_data/. Providing --data-root "
+            "overrides the defaults, so use it repeatedly to enumerate all "
+            "desired dataset roots."
         ),
     )
     args = parser.parse_args()
 
     # Collect all npz files from the requested data directories
-    default_roots = [Path("pretrain_data")]
+    default_roots = [Path("pretrain_data"), Path("simulated_data")]
     data_roots: List[Path] = args.data_roots or default_roots
     searched_roots: List[Path] = []
     all_npz: List[Path] = []
@@ -132,11 +150,12 @@ def main() -> None:
     ) -> List[str]:
         cmd: List[str] = [
             "python",
-            str(SCRIPT),
+            "-m",
+            "ai_models.model_mla",
             "--epochs",
-            EPOCHS,
+            str(args.epochs),
             "--batch_size",
-            BATCH_SIZE,
+            str(args.batch_size),
             "--npz_file",
             str(npz),
             "--model-save-path",
@@ -148,6 +167,8 @@ def main() -> None:
             cmd.extend(["--device_index", str(device_index)])
         if tqdm_position is not None:
             cmd.extend(["--tqdm_position", str(max(tqdm_position, 0))])
+        if args.max_samples is not None:
+            cmd.extend(["--max_samples", str(args.max_samples)])
         return cmd
 
     # If more than one device is available we run training tasks in parallel.

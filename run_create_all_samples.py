@@ -1,9 +1,14 @@
 """Batch helper for generating all experiment .npz bundles.
 
 The google_qec_simulator CLI only accepts a *single* experiment directory at a
-time.  This script discovers every directory under ``experiment_data/`` that
-contains ``*.stim`` circuits and sequentially invokes the simulator so that we
-obtain one ``samples_<experiment>.npz`` per experiment in ``simulated_data/``.
+time. This script discovers every directory under ``experiment_data/`` that
+contains ``*.stim`` circuits. It then sequentially invokes the simulator so
+that we obtain one ``samples_<experiment>.npz`` per experiment under
+``simulated_data/``.
+
+By default we **preserve the experiment folder structure** under
+``simulated_data/`` so later stages (pretraining/training) can keep a
+one-model-per-experiment workflow.
 
 Example
 -------
@@ -44,6 +49,12 @@ def main() -> None:
         help="Destination directory for generated samples_*.npz files",
     )
     parser.add_argument(
+        "--layout",
+        choices=("by_experiment", "flat"),
+        default="by_experiment",
+        help="Output layout: create subfolders per experiment (default) or a flat directory.",
+    )
+    parser.add_argument(
         "--device",
         type=str,
         default="cpu",
@@ -74,8 +85,14 @@ def main() -> None:
 
     for idx, exp_dir in enumerate(experiments, start=1):
         rel_name = exp_dir.relative_to(exp_root).as_posix()
-        safe_name = rel_name.replace("/", "_")
-        out_file = out_root / f"samples_{safe_name}.npz"
+        if args.layout == "flat":
+            safe_name = rel_name.replace("/", "_")
+            out_file = out_root / f"samples_{safe_name}.npz"
+        else:
+            # Preserve experiment folder structure
+            rel_dir = out_root / rel_name
+            rel_dir.mkdir(parents=True, exist_ok=True)
+            out_file = rel_dir / f"samples_{exp_dir.name}.npz"
 
         if args.skip_existing and out_file.exists():
             print(f"[{idx}/{len(experiments)}] Skip existing {out_file.name}")

@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
 """
-run_training_all.py
-
-Enhanced training launcher for ALPHAQUBIT.  It iterates over all `.npz`
-files under ``pretrain_data`` (by default) and trains a model on each using
-``ai_models/model_mla.py``.  When running with the ``--npu`` flag and
-multiple Ascend NPUs are available the launcher dispatches multiple
-training processes concurrently, pinning each process to a single device
-via the ``NPU_VISIBLE_DEVICES`` environment variable.  This allows
-utilisation of all available devices.  If NPUs are not present or
-the ``--npu`` flag is omitted the script falls back to the original
-serial behaviour and uses GPUs or the CPU as appropriate.
+Train **one model per experiment** by iterating over all ``.npz`` files under
+``pretrain_data`` (recursively) and launching ``ai_models/model_mla.py`` once per
+file. With ``--npu`` and multiple NPUs/GPUs available, jobs are scheduled in
+parallel.
 
 Usage:
-    python run_training_all.py [--npu]
-
+    python run_training_all.py [--npu] [--data-root PRETRAIN_DIR]...
 """
 
 import argparse
@@ -133,7 +125,10 @@ def main() -> None:
 
     # Helper to build the command list for a single training invocation
     def build_cmd(
-        npz: Path, device_index: Optional[int] = None, tqdm_position: Optional[int] = None
+        npz: Path,
+        model_path: Path,
+        device_index: Optional[int] = None,
+        tqdm_position: Optional[int] = None,
     ) -> List[str]:
         cmd: List[str] = [
             "python",
@@ -144,6 +139,8 @@ def main() -> None:
             BATCH_SIZE,
             "--npz_file",
             str(npz),
+            "--model-save-path",
+            str(model_path),
         ]
         if args.npu:
             cmd.append("--npu")
@@ -175,7 +172,8 @@ def main() -> None:
                 env["ASCEND_DEVICE_ID"] = str(device_idx)
                 env.setdefault("DEVICE_ID", str(device_idx))
 
-            cmd = build_cmd(npz, device_idx, device_idx)
+            model_path = expected_models[npz]
+            cmd = build_cmd(npz, model_path, device_idx, device_idx)
             master_port = _allocate_master_port(allocated_ports)
             env.setdefault("MASTER_ADDR", "127.0.0.1")
             env["MASTER_PORT"] = str(master_port)
@@ -200,7 +198,8 @@ def main() -> None:
     # Serial fallback: one training process at a time
     for npz in npz_files:
         position = 0 if (args.npu or (torch is not None and torch.cuda.is_available())) else None
-        cmd = build_cmd(npz, position, position)
+        model_path = expected_models[npz]
+        cmd = build_cmd(npz, model_path, position, position)
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
         print(f"Running: {' '.join(cmd)}")

@@ -129,17 +129,22 @@ def choose_label_key(
     return None
 
 
-def find_label_key(npz_path: str | os.PathLike[str], basis_id: int) -> Optional[str]:
-    """Return the first valid label array key for ``npz_path`` or ``None``."""
+def find_label_key(npz_path: os.PathLike[str] | str, basis_id: int) -> Optional[str]:
+    """Best-effort label key discovery used by external launchers."""
 
     try:
         with np.load(npz_path) as data:
-            if "data" not in data.files:
-                return None
-            num_samples = data["data"].shape[0]
-            return choose_label_key(data, num_samples, basis_id, str(npz_path))
-    except FileNotFoundError:
+            candidates = ["obs", "label", "labels", "logical", "logical_error"]
+            if basis_id == 0:
+                candidates = ["obs_x", "logical_x"] + candidates
+            elif basis_id == 1:
+                candidates = ["obs_z", "logical_z"] + candidates
+            for cand in candidates:
+                if cand in data:
+                    return cand
+    except Exception:
         return None
+    return None
 
 
 class PauliPlusDataset(Dataset):

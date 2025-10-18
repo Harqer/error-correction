@@ -240,6 +240,12 @@ if __name__ == "__main__":
         default=None,
         help="Explicit checkpoint path (.pth). Defaults to ai_models/models/<stem>.pth",
     )
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Optionally cap the number of samples loaded from the dataset (useful for smoke tests)",
+    )
     args = parser.parse_args()
 
     use_npu = bool(args.npu and hasattr(torch, "npu") and getattr(torch.npu, "is_available", lambda: False)())
@@ -262,14 +268,23 @@ if __name__ == "__main__":
         basis = 0
 
     dataset = PauliPlusDataset(args.npz_file, basis)
-    n = len(dataset)
-    if n < 2:
-        raise RuntimeError("Dataset must contain at least two samples for train/val split")
-    idx = torch.randperm(n)
-    split = max(1, int(0.9 * n))
+    total_samples = len(dataset)
+    if args.max_samples is not None:
+        if args.max_samples <= 0:
+            raise ValueError("--max_samples must be positive when provided")
+        total_samples = min(total_samples, args.max_samples)
 
-    tr_ds = torch.utils.data.Subset(dataset, idx[:split])
-    va_ds = torch.utils.data.Subset(dataset, idx[split:])
+    if total_samples < 2:
+        raise RuntimeError("Dataset must contain at least two samples for train/val split")
+
+    perm = torch.randperm(len(dataset))[:total_samples]
+    split = max(1, int(0.9 * total_samples))
+
+    train_indices = perm[:split].tolist()
+    val_indices = perm[split:].tolist()
+
+    tr_ds = torch.utils.data.Subset(dataset, train_indices)
+    va_ds = torch.utils.data.Subset(dataset, val_indices)
 
     pin_memory = device.type in {"cuda", "npu"}
     tr_loader = DataLoader(tr_ds, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=pin_memory)

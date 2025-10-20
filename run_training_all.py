@@ -17,7 +17,7 @@ import sys
 import time
 from itertools import cycle
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Iterator, List, Optional, Sequence, Set, Tuple
 
 from ai_models.model_mla import get_basis_from_filename, model_stem_from_npz
 from ai_models.pauli_plus_dataset import find_label_key
@@ -86,26 +86,51 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # Collect all npz files from the requested data directories
-    default_roots = [Path("pretrain_data"), Path("simulated_data")]
-    data_roots: List[Path] = args.data_roots or default_roots
+    # Collect all npz files from the requested data directories.  When the user
+    # does not provide ``--data-root`` we prefer ``pretrain_data/`` (populated by
+    # ``make_all_pretraining_noise.py``) and only fall back to ``simulated_data``
+    # if no datasets were discovered.  This avoids training each experiment
+    # twice when the helper script has already copied the generated ``.npz``
+    # files into ``pretrain_data/``.
+    fallback_roots: List[Path]
+    if args.data_roots:
+        data_roots = [Path(root) for root in args.data_roots]
+        fallback_roots = []
+    else:
+        data_roots = [Path("pretrain_data")]
+        fallback_roots = [Path("simulated_data")]
+
     searched_roots: List[Path] = []
     all_npz: List[Path] = []
     seen: Set[Path] = set()
-    for root in data_roots:
+
+    def collect(root: Path) -> int:
         searched_roots.append(root)
         if not root.is_dir():
             print(f"No dataset directory found at {root}; skipping")
-            continue
+            return 0
+        found = 0
         for npz in sorted(root.rglob("*.npz")):
             resolved = npz.resolve()
             if resolved in seen:
                 continue
             seen.add(resolved)
             all_npz.append(npz)
+            found += 1
+        return found
+
+    discovered = sum(collect(root) for root in data_roots)
+    if discovered == 0 and not args.data_roots:
+        for root in fallback_roots:
+            collect(root)
     if not all_npz:
         joined = ", ".join(str(root) for root in searched_roots)
         print(f"No .npz files found in any of: {joined}")
+        if not args.data_roots:
+            print(
+                "Hint: run 'python make_all_pretraining_noise.py' to populate "
+                "pretrain_data/ before launching training."
+            )
         return
 
     npz_files: List[Path] = []
@@ -131,17 +156,19 @@ def main() -> None:
         print(f"  {npz} -> {model_path}")
     run_start_time = time.time()
 
-    # Determine the number of devices available.  Prefer NPUs when --npu is
-    # specified, otherwise fall back to CUDA.  When torch is unavailable we
-    # assume a single CPU device.
-    device_count = 1
-    if args.npu and torch is not None and hasattr(torch, "npu"):
-        try:
-            device_count = getattr(torch.npu, "device_count", lambda: 1)()
-        except Exception:
-            device_count = 1
-    elif not args.npu and torch is not None and torch.cuda.is_available():
-        device_count = torch.cuda.device_count()
+    # Determine the accelerator indices that are available.  For NPUs we rely on
+    # ``torch.npu`` when possible, but also honour ``ASCEND_VISIBLE_DEVICES`` and
+    # related environment variables – these are commonly used to expose multiple
+    # devices to the process while ``torch.npu.device_count()`` may still report
+    # ``1``.  When no accelerators are present the list falls back to ``[0]`` so
+    # the remainder of the launcher logic can treat it uniformly.
+    device_indices: Sequence[int]
+    if args.npu:
+        device_indices = _discover_npu_devices()
+    else:
+        device_indices = _discover_gpu_devices()
+
+    device_count = len(device_indices)
 
     # Helper to build the command list for a single training invocation
     def build_cmd(
@@ -178,13 +205,14 @@ def main() -> None:
     # visibility environment variable.  The concurrency level is capped at
     # the number of devices to avoid oversubscription.
     if device_count > 1:
+        device_desc = ", ".join(str(idx) for idx in device_indices)
         print(
-            f"Detected {device_count} {'NPUs' if args.npu else 'GPUs'}. "
+            f"Detected {device_count} {'NPUs' if args.npu else 'GPUs'} ({device_desc}). "
             "Launching tasks in parallel."
         )
         processes: List[Tuple[subprocess.Popen, List[str], int]] = []
         allocated_ports: Set[int] = set()
-        device_cycle = cycle(range(device_count))
+        device_cycle = cycle(device_indices)
         for npz in npz_files:
             device_idx = next(device_cycle)
             env = os.environ.copy()
@@ -193,8 +221,7 @@ def main() -> None:
                 # Ascend PyTorch honours these environment variables when selecting
                 # a default device.  Setting them ensures libraries that bypass
                 # ``torch.npu.set_device`` still remain on the assigned device.
-                env["ASCEND_DEVICE_ID"] = str(device_idx)
-                env.setdefault("DEVICE_ID", str(device_idx))
+                _apply_npu_env(env, device_idx)
 
             model_path = expected_models[npz]
             cmd = build_cmd(npz, model_path, device_idx, device_idx)
@@ -220,9 +247,9 @@ def main() -> None:
         return
 
     # Serial fallback: one training process at a time
-    position_cycle = None
-    if args.npu or (torch is not None and torch.cuda.is_available()):
-        position_cycle = cycle(range(max(device_count, 1)))
+    position_cycle: Optional[Iterator[int]] = None
+    if device_count:
+        position_cycle = cycle(device_indices)
 
     for npz in npz_files:
         position = next(position_cycle) if position_cycle is not None else None
@@ -230,6 +257,8 @@ def main() -> None:
         cmd = build_cmd(npz, model_path, position, position)
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
+        if args.npu and position is not None:
+            _apply_npu_env(env, position)
         print(f"Running: {' '.join(cmd)}")
         subprocess.run(cmd, check=True, env=env)
 
@@ -293,6 +322,111 @@ def _verify_models(models: Dict[Path, Path], start_time: float) -> None:
         raise RuntimeError("\n".join(error_lines))
 
     print(f"All models saved successfully in {MODEL_DIR.resolve()}.")
+
+
+def _discover_npu_devices() -> Sequence[int]:
+    """Return the list of NPU device indices visible to the process."""
+
+    env_devices = _parse_visible_devices(
+        os.environ,
+        (
+            "ASCEND_VISIBLE_DEVICES",
+            "ASCEND_RT_VISIBLE_DEVICES",
+            "NPU_VISIBLE_DEVICES",
+            "DEVICE_ID_LIST",
+        ),
+    )
+
+    # Ensure torch is initialised with NPU support if possible.  Some Ascend
+    # installations require importing ``torch_npu`` before ``torch.npu`` becomes
+    # available.  Any import error is ignored so we can still fall back to CPU.
+    if torch is not None and not hasattr(torch, "npu"):
+        try:
+            import importlib
+
+            importlib.import_module("torch_npu")
+        except Exception:
+            pass
+
+    count = 0
+    if torch is not None and hasattr(torch, "npu"):
+        try:
+            count = int(max(getattr(torch.npu, "device_count", lambda: 0)(), 0))
+        except Exception:
+            count = 0
+
+    if env_devices:
+        devices = env_devices
+        # When ``torch.npu.device_count`` under-reports the available hardware we
+        # still honour the explicit environment list so that the launcher can
+        # distribute work across the provided indices.
+        if count and max(devices, default=-1) >= count:
+            print(
+                "[warn] torch.npu.device_count() returned fewer devices than "
+                "the environment exposes; proceeding with the environment list."
+            )
+    elif count > 0:
+        devices = list(range(count))
+    else:
+        devices = [0]
+
+    return tuple(devices)
+
+
+def _discover_gpu_devices() -> Sequence[int]:
+    """Return the list of GPU device indices visible to the process."""
+
+    env_devices = _parse_visible_devices(os.environ, ("CUDA_VISIBLE_DEVICES",))
+    if torch is not None and torch.cuda.is_available():
+        count = torch.cuda.device_count()
+    else:
+        count = 0
+
+    if env_devices:
+        # CUDA exposes devices in the order provided by CUDA_VISIBLE_DEVICES.
+        devices = env_devices
+    elif count > 0:
+        devices = list(range(count))
+    else:
+        devices = [0]
+
+    return tuple(devices)
+
+
+def _parse_visible_devices(env: Dict[str, str], keys: Sequence[str]) -> Optional[List[int]]:
+    """Parse accelerator visibility environment variables into integer lists."""
+
+    for key in keys:
+        raw = env.get(key)
+        if not raw:
+            continue
+        tokens = raw.replace(";", ",").split(",")
+        devices: List[int] = []
+        for token in tokens:
+            token = token.strip()
+            if not token:
+                continue
+            try:
+                devices.append(int(token))
+            except ValueError:
+                # Ignore non-integer tokens; leave the loop so the next key can
+                # be considered instead of returning a partial result.
+                devices = []
+                break
+        if devices:
+            return devices
+    return None
+
+
+def _apply_npu_env(env: Dict[str, str], device_idx: int) -> None:
+    """Restrict a child process to ``device_idx`` for Ascend NPUs."""
+
+    value = str(device_idx)
+    env["ASCEND_DEVICE_ID"] = value
+    env["DEVICE_ID"] = value
+    env["ASCEND_VISIBLE_DEVICES"] = value
+    env["ASCEND_RT_VISIBLE_DEVICES"] = value
+    env["NPU_VISIBLE_DEVICES"] = value
 
 
 if __name__ == "__main__":

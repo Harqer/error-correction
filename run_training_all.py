@@ -13,7 +13,9 @@ import argparse
 import os
 import socket
 import subprocess
+import sys
 import time
+from itertools import cycle
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -149,7 +151,7 @@ def main() -> None:
         tqdm_position: Optional[int] = None,
     ) -> List[str]:
         cmd: List[str] = [
-            "python",
+            sys.executable,
             "-m",
             "ai_models.model_mla",
             "--epochs",
@@ -182,8 +184,9 @@ def main() -> None:
         )
         processes: List[Tuple[subprocess.Popen, List[str], int]] = []
         allocated_ports: Set[int] = set()
-        for idx, npz in enumerate(npz_files):
-            device_idx = idx % device_count
+        device_cycle = cycle(range(device_count))
+        for npz in npz_files:
+            device_idx = next(device_cycle)
             env = os.environ.copy()
 
             if args.npu:
@@ -217,8 +220,12 @@ def main() -> None:
         return
 
     # Serial fallback: one training process at a time
+    position_cycle = None
+    if args.npu or (torch is not None and torch.cuda.is_available()):
+        position_cycle = cycle(range(max(device_count, 1)))
+
     for npz in npz_files:
-        position = 0 if (args.npu or (torch is not None and torch.cuda.is_available())) else None
+        position = next(position_cycle) if position_cycle is not None else None
         model_path = expected_models[npz]
         cmd = build_cmd(npz, model_path, position, position)
         env = os.environ.copy()

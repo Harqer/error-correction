@@ -123,6 +123,29 @@ def main() -> None:
     if discovered == 0 and not args.data_roots:
         for root in fallback_roots:
             collect(root)
+
+    invalid_logged: Set[Path] = set()
+    label_cache: Dict[Path, Optional[str]] = {}
+
+    def filter_valid_npz(candidates: Sequence[Path]) -> List[Path]:
+        valid: List[Path] = []
+        for npz in candidates:
+            basis = get_basis_from_filename(npz.name)
+            if basis == -1:
+                basis = 0
+            if npz in label_cache:
+                label_key = label_cache[npz]
+            else:
+                label_key = find_label_key(npz, basis)
+                label_cache[npz] = label_key
+            if label_key is None:
+                if npz not in invalid_logged:
+                    print(f"Skipping {npz} – no valid label array found")
+                    invalid_logged.add(npz)
+                continue
+            valid.append(npz)
+        return valid
+
     if not all_npz:
         joined = ", ".join(str(root) for root in searched_roots)
         print(f"No .npz files found in any of: {joined}")
@@ -133,16 +156,18 @@ def main() -> None:
             )
         return
 
-    npz_files: List[Path] = []
-    for npz in all_npz:
-        basis = get_basis_from_filename(npz.name)
-        if basis == -1:
-            basis = 0
-        label_key = find_label_key(npz, basis)
-        if label_key is None:
-            print(f"Skipping {npz} – no valid label array found")
-            continue
-        npz_files.append(npz)
+    npz_files = filter_valid_npz(all_npz)
+
+    if not npz_files and fallback_roots and not args.data_roots:
+        # No usable datasets were found under the primary roots (for example
+        # ``pretrain_data`` may contain partially generated files without
+        # labels).  Try the fallback directories before giving up so that the
+        # launcher can still train on datasets under ``simulated_data``.
+        new_found = 0
+        for root in fallback_roots:
+            new_found += collect(root)
+        if new_found:
+            npz_files = filter_valid_npz(all_npz)
 
     if not npz_files:
         joined = ", ".join(str(root) for root in searched_roots)

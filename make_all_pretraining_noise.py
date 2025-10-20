@@ -200,7 +200,17 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
     if RUN_CREATE_ALL.exists():
         # The README shows this wrapper for generating .npz across circuits under simulated_data/.
         # Preserve per-experiment folders so downstream training can keep datasets separate.
-        _run([sys.executable, str(RUN_CREATE_ALL), "--layout", "by_experiment"])
+        cmd = [
+            sys.executable,
+            str(RUN_CREATE_ALL),
+            "--layout",
+            "by_experiment",
+            "--shots",
+            str(soft_shots),
+            "--device",
+            device,
+        ]
+        _run(cmd)
     else:
         # Fallback: call google_qec_simulator/main.py directly on a plausible experiment dir.
         # README shows: python google_qec_simulator/main.py path/to/exp --shots N --device <cpu|cuda|npu>

@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import time
+from contextlib import suppress
 from itertools import cycle
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Sequence, Set, Tuple
@@ -246,10 +247,12 @@ def main() -> None:
                 # Ascend PyTorch honours these environment variables when selecting
                 # a default device.  Setting them ensures libraries that bypass
                 # ``torch.npu.set_device`` still remain on the assigned device.
-                _apply_npu_env(env, device_idx)
+                local_device_idx = _apply_npu_env(env, device_idx)
+            else:
+                local_device_idx = device_idx
 
             model_path = expected_models[npz]
-            cmd = build_cmd(npz, model_path, device_idx, device_idx)
+            cmd = build_cmd(npz, model_path, local_device_idx, device_idx)
             master_port = _allocate_master_port(allocated_ports)
             env.setdefault("MASTER_ADDR", "127.0.0.1")
             env["MASTER_PORT"] = str(master_port)
@@ -279,11 +282,13 @@ def main() -> None:
     for npz in npz_files:
         position = next(position_cycle) if position_cycle is not None else None
         model_path = expected_models[npz]
-        cmd = build_cmd(npz, model_path, position, position)
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
         if args.npu and position is not None:
-            _apply_npu_env(env, position)
+            device_index = _apply_npu_env(env, position)
+        else:
+            device_index = position
+        cmd = build_cmd(npz, model_path, device_index, position)
         print(f"Running: {' '.join(cmd)}")
         subprocess.run(cmd, check=True, env=env)
 
@@ -381,21 +386,78 @@ def _discover_npu_devices() -> Sequence[int]:
             count = 0
 
     if env_devices:
-        devices = env_devices
-        # When ``torch.npu.device_count`` under-reports the available hardware we
-        # still honour the explicit environment list so that the launcher can
-        # distribute work across the provided indices.
-        if count and max(devices, default=-1) >= count:
-            print(
-                "[warn] torch.npu.device_count() returned fewer devices than "
-                "the environment exposes; proceeding with the environment list."
+        devices, failures = _validate_npu_devices(env_devices)
+        if failures:
+            failure_msgs = ", ".join(
+                f"{idx}: {str(exc).splitlines()[0]}" for idx, exc in failures
             )
+            print(
+                "[warn] Ignoring invalid NPU indices from environment: "
+                f"{failure_msgs}"
+            )
+        if devices:
+            # When ``torch.npu.device_count`` under-reports the available
+            # hardware we still honour the explicit environment list so that the
+            # launcher can distribute work across the provided indices.
+            if count and max(devices, default=-1) >= count:
+                print(
+                    "[warn] torch.npu.device_count() returned fewer devices "
+                    "than the environment exposes; proceeding with the "
+                    "environment list."
+                )
+        elif count > 0:
+            print(
+                "[warn] No usable NPU indices remained after filtering the "
+                "environment list; falling back to torch.npu.device_count()."
+            )
+            devices = list(range(count))
+        else:
+            print(
+                "[warn] No usable NPU indices remained after filtering the "
+                "environment list; defaulting to device 0."
+            )
+            devices = [0]
     elif count > 0:
         devices = list(range(count))
     else:
         devices = [0]
 
     return tuple(devices)
+
+
+def _validate_npu_devices(devices: Sequence[int]) -> Tuple[List[int], List[Tuple[int, Exception]]]:
+    """Return devices that torch.npu can select and the failures encountered."""
+
+    if torch is None or not hasattr(torch, "npu"):
+        return list(dict.fromkeys(devices)), []
+
+    unique_devices: List[int] = []
+    seen: Set[int] = set()
+    for idx in devices:
+        if idx in seen:
+            continue
+        seen.add(idx)
+        unique_devices.append(idx)
+
+    valid: List[int] = []
+    failures: List[Tuple[int, Exception]] = []
+    current_device: Optional[int] = None
+    with suppress(Exception):
+        current_device = torch.npu.current_device()
+
+    for idx in unique_devices:
+        try:
+            torch.npu.set_device(idx)
+        except Exception as exc:  # pragma: no cover - depends on hardware
+            failures.append((idx, exc))
+        else:  # pragma: no cover - depends on hardware
+            valid.append(idx)
+
+    if current_device is not None:
+        with suppress(Exception):
+            torch.npu.set_device(current_device)
+
+    return valid, failures
 
 
 def _discover_gpu_devices() -> Sequence[int]:
@@ -443,8 +505,16 @@ def _parse_visible_devices(env: Dict[str, str], keys: Sequence[str]) -> Optional
     return None
 
 
-def _apply_npu_env(env: Dict[str, str], device_idx: int) -> None:
-    """Restrict a child process to ``device_idx`` for Ascend NPUs."""
+def _apply_npu_env(env: Dict[str, str], device_idx: int) -> int:
+    """Restrict a child process to ``device_idx`` for Ascend NPUs.
+
+    Returns the device index that should be forwarded to the training command.
+    When the visibility environment variables expose a single accelerator the
+    runtime renumbers it to ``0``.  Passing the physical index directly would
+    therefore fail inside the child process.  Instead this helper keeps the
+    physical ID in the environment while returning the logical index that the
+    spawned trainer should request via ``--device_index``.
+    """
 
     value = str(device_idx)
     env["ASCEND_DEVICE_ID"] = value
@@ -452,6 +522,10 @@ def _apply_npu_env(env: Dict[str, str], device_idx: int) -> None:
     env["ASCEND_VISIBLE_DEVICES"] = value
     env["ASCEND_RT_VISIBLE_DEVICES"] = value
     env["NPU_VISIBLE_DEVICES"] = value
+
+    # Child processes see only the devices listed in the visibility variables.
+    # With a single entry this means ``torch.npu`` exposes it as ``0``.
+    return 0
 
 
 if __name__ == "__main__":

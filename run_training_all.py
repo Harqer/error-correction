@@ -18,7 +18,7 @@ import time
 from contextlib import suppress
 from itertools import cycle
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Sequence, Set, Tuple
+from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
 
 from ai_models.model_mla import get_basis_from_filename, model_stem_from_npz
 from ai_models.pauli_plus_dataset import find_label_key
@@ -34,6 +34,9 @@ except ImportError:
 DEFAULT_EPOCHS: int = 20
 DEFAULT_BATCH_SIZE: int = 16
 MODEL_DIR: Path = Path("ai_models") / "models"
+THIS_DIR = Path(__file__).resolve().parent
+RUN_CREATE_ALL = THIS_DIR / "run_create_all_samples.py"
+EXPERIMENT_ROOT = THIS_DIR / "experiment_data"
 
 
 def main() -> None:
@@ -121,6 +124,16 @@ def main() -> None:
         return found
 
     discovered = sum(collect(root) for root in data_roots)
+    if discovered == 0 and not args.data_roots:
+        auto_generated = _auto_generate_datasets(
+            fallback_roots, use_npu=args.npu
+        )
+        if auto_generated:
+            all_npz.clear()
+            seen.clear()
+            searched_roots.clear()
+            discovered = sum(collect(root) for root in data_roots)
+
     if discovered == 0 and not args.data_roots:
         for root in fallback_roots:
             collect(root)
@@ -352,6 +365,69 @@ def _verify_models(models: Dict[Path, Path], start_time: float) -> None:
         raise RuntimeError("\n".join(error_lines))
 
     print(f"All models saved successfully in {MODEL_DIR.resolve()}.")
+
+
+def _auto_generate_datasets(
+    fallback_roots: Iterable[Path], *, use_npu: bool
+) -> bool:
+    """Generate missing experiment datasets using ``run_create_all_samples``."""
+
+    if not fallback_roots:
+        return False
+    if not RUN_CREATE_ALL.exists() or not RUN_CREATE_ALL.is_file():
+        return False
+    if not EXPERIMENT_ROOT.exists():
+        return False
+
+    try:
+        first_root = next(iter(fallback_roots))
+    except StopIteration:
+        return False
+
+    first_root.mkdir(parents=True, exist_ok=True)
+
+    device = _default_simulator_device(use_npu=use_npu)
+    cmd = [
+        sys.executable,
+        str(RUN_CREATE_ALL),
+        "--experiment-root",
+        str(EXPERIMENT_ROOT),
+        "--output-dir",
+        str(first_root),
+        "--layout",
+        "by_experiment",
+        "--skip-existing",
+        "--device",
+        device,
+    ]
+
+    print(
+        "No datasets detected – generating simulated samples for all experiments\n"
+        f"Running: {' '.join(cmd)}"
+    )
+
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as exc:
+        print(
+            "Automatic dataset generation failed; proceeding without generated"
+            f" samples (return code {exc.returncode})."
+        )
+        return False
+
+    return True
+
+
+def _default_simulator_device(*, use_npu: bool) -> str:
+    """Select an appropriate device flag for ``run_create_all_samples``."""
+
+    if use_npu:
+        return "npu"
+    if torch is not None:
+        with suppress(Exception):
+            if torch.cuda.is_available():
+                return "cuda"
+    return "cpu"
 
 
 def _discover_npu_devices() -> Sequence[int]:

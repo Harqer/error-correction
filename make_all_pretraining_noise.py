@@ -268,41 +268,73 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
             cmd += ["--device", device]
         _run(cmd)
 
-    created = _new_files(SIMDATA_DIR, before)
-    npzs = [p for p in created if p.suffix == ".npz"]
-    if not npzs:
-        print("[SOFT] No new .npz detected under simulated_data/. "
-              "Ensure run_create_all_samples.py or google_qec_simulator wrote outputs.", file=sys.stderr)
-    seen_experiments = set()
-    for src in npzs:
-        try:
-            rel = src.resolve().relative_to(SIMDATA_DIR.resolve())
-        except Exception:
-            rel = Path(src.name)
-        dst = dest_root / rel
-        _safe_copy(src, dst)
-        if rel.parent != Path('.'):
-            seen_experiments.add(rel.parent.as_posix())
-        manifest.append({
-            "kind": "soft",
-            "shots": soft_shots,
-            "device": device,
-            "files": [str(dst)],
-            "experiment": str(dst.parent.relative_to(dest_root)),
-        })
+    created = {p.resolve() for p in _new_files(SIMDATA_DIR, before) if p.suffix == ".npz"}
+
+    copied_any = False
+    missing_experiments: list[str] = []
 
     if experiments:
-        expected = {p.relative_to(exp_root).as_posix() for p in experiments}
-        missing = sorted(expected - seen_experiments)
-        if missing:
+        for exp_dir in experiments:
+            rel = exp_dir.relative_to(exp_root)
+            sim_dir = SIMDATA_DIR / rel
+            files = sorted(sim_dir.glob("*.npz")) if sim_dir.exists() else []
+            if not files:
+                missing_experiments.append(rel.as_posix())
+                continue
+
+            copied_files: list[str] = []
+            for src in files:
+                dst = dest_root / rel / src.name
+                _safe_copy(src, dst)
+                copied_files.append(str(dst))
+                copied_any = True
+
+            manifest.append({
+                "kind": "soft",
+                "shots": soft_shots,
+                "device": device,
+                "files": copied_files,
+                "experiment": rel.as_posix(),
+                "new_sources": [str(src) for src in files if src.resolve() in created],
+            })
+    else:
+        # Fallback: no experiment discovery available – copy every .npz in simulated_data.
+        all_npz = sorted(SIMDATA_DIR.rglob("*.npz"))
+        if not all_npz:
             print(
-                "[SOFT] Warning: No new data was produced for the following experiments: "
-                + ", ".join(missing)
+                "[SOFT] No .npz files detected under simulated_data/. "
+                "Ensure run_create_all_samples.py or google_qec_simulator wrote outputs.",
+                file=sys.stderr,
             )
-            print(
-                "        Existing .npz files will need to be regenerated (or deleted) "
-                "before they can be copied into the pretraining tree."
-            )
+        for src in all_npz:
+            try:
+                rel = src.resolve().relative_to(SIMDATA_DIR.resolve())
+            except Exception:
+                rel = Path(src.name)
+            dst = dest_root / rel
+            _safe_copy(src, dst)
+            manifest.append({
+                "kind": "soft",
+                "shots": soft_shots,
+                "device": device,
+                "files": [str(dst)],
+                "experiment": str(dst.parent.relative_to(dest_root)),
+                "new_sources": [str(src)] if src.resolve() in created else [],
+            })
+            copied_any = True
+
+    if missing_experiments:
+        missing_list = "\n  - ".join(missing_experiments)
+        raise RuntimeError(
+            "[SOFT] Failed to produce samples for all experiments. Missing:\n  - "
+            + missing_list
+        )
+
+    if not copied_any:
+        raise RuntimeError(
+            "[SOFT] No experiment datasets were copied into the pretraining tree. "
+            "Check that run_create_all_samples.py succeeded."
+        )
 
 def main():
     parser = argparse.ArgumentParser(description="Generate ALL pretraining noise datasets for ALPHAQUBIT.")

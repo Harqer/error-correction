@@ -241,8 +241,8 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
         )
 
     if RUN_CREATE_ALL.exists():
-        # The README shows this wrapper for generating .npz across circuits under simulated_data/.
-        # Preserve per-experiment folders so downstream training can keep datasets separate.
+        # Use the batch helper so *all* experiments under experiment_data/ are generated.
+        # Forward shots & device so the caller's CLI flags actually take effect.
         cmd = [
             sys.executable,
             str(RUN_CREATE_ALL),
@@ -345,7 +345,7 @@ def main():
     parser.add_argument("--si1000-p-grid", type=str, default="0.006,0.010,0.014",
                         help="Comma-separated p grid for SI1000 (e.g., 0.002,0.004,...).")
     parser.add_argument("--soft-shots", type=int, default=100_000,
-                        help="Shots for soft/IQ sampling when calling google_qec_simulator directly.")
+                        help="Shots *per experiment* for soft/IQ sampling (forwarded to run_create_all_samples.py or google_qec_simulator).")
     parser.add_argument("--soft-device", type=str, default="auto", choices=["auto", "cpu", "cuda", "npu"],
                         help="Device for soft/IQ sampling (auto tries NPU, then CUDA).")
     parser.add_argument("--out-dir", type=str, default="pretrain_data",

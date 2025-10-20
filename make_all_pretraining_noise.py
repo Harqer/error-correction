@@ -25,6 +25,7 @@ Example:
     --out-dir pretrain_data
 """
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -137,6 +138,35 @@ def _dump_yaml(obj, path: Path):
     with open(path, "w") as f:
         yaml.safe_dump(obj, f, sort_keys=False)
 
+
+def _discover_experiments(exp_root: Path):
+    """Return experiment directories detected by ``run_create_all_samples``."""
+
+    if not RUN_CREATE_ALL.exists():
+        return []
+
+    spec = importlib.util.spec_from_file_location(
+        "_run_create_all_samples", RUN_CREATE_ALL
+    )
+    if spec is None or spec.loader is None:
+        return []
+
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        return []
+
+    discover = getattr(module, "discover_experiments", None)
+    if discover is None:
+        return []
+
+    try:
+        return discover(exp_root)
+    except Exception:
+        return []
+
+
 def generate_dem(dem_samples: int, dest_root: Path, manifest: list):
     print("\n=== [DEM] Generating DEM data ===")
     before = _snapshot(OUTPUT_DIR)
@@ -196,6 +226,19 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
     device = _detect_device(device)
     print(f"[SOFT] Selected device: {device}")
     before = _snapshot(SIMDATA_DIR)
+    exp_root = REPO_ROOT / "experiment_data"
+    experiments = _discover_experiments(exp_root)
+    if experiments:
+        rel_paths = [p.relative_to(exp_root).as_posix() for p in experiments]
+        print(
+            "[SOFT] Experiments discovered under experiment_data/:\n  - "
+            + "\n  - ".join(rel_paths)
+        )
+    else:
+        print(
+            "[SOFT] Warning: No experiments discovered under experiment_data/. "
+            "Only datasets produced during this run will be collected."
+        )
 
     if RUN_CREATE_ALL.exists():
         # The README shows this wrapper for generating .npz across circuits under simulated_data/.
@@ -210,6 +253,8 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
             "--device",
             device,
         ]
+        if exp_root.exists():
+            cmd += ["--experiment-root", str(exp_root)]
         _run(cmd)
     else:
         # Fallback: call google_qec_simulator/main.py directly on a plausible experiment dir.
@@ -228,6 +273,7 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
     if not npzs:
         print("[SOFT] No new .npz detected under simulated_data/. "
               "Ensure run_create_all_samples.py or google_qec_simulator wrote outputs.", file=sys.stderr)
+    seen_experiments = set()
     for src in npzs:
         try:
             rel = src.resolve().relative_to(SIMDATA_DIR.resolve())
@@ -235,6 +281,8 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
             rel = Path(src.name)
         dst = dest_root / rel
         _safe_copy(src, dst)
+        if rel.parent != Path('.'):
+            seen_experiments.add(rel.parent.as_posix())
         manifest.append({
             "kind": "soft",
             "shots": soft_shots,
@@ -242,6 +290,19 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
             "files": [str(dst)],
             "experiment": str(dst.parent.relative_to(dest_root)),
         })
+
+    if experiments:
+        expected = {p.relative_to(exp_root).as_posix() for p in experiments}
+        missing = sorted(expected - seen_experiments)
+        if missing:
+            print(
+                "[SOFT] Warning: No new data was produced for the following experiments: "
+                + ", ".join(missing)
+            )
+            print(
+                "        Existing .npz files will need to be regenerated (or deleted) "
+                "before they can be copied into the pretraining tree."
+            )
 
 def main():
     parser = argparse.ArgumentParser(description="Generate ALL pretraining noise datasets for ALPHAQUBIT.")

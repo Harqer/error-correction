@@ -2,11 +2,12 @@ import re
 import math
 import argparse
 from pathlib import Path
+from datetime import datetime, timedelta
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from datetime import datetime, timedelta
 
 from ai_models.pauli_plus_dataset import PauliPlusDataset
 from mla.core import DeepSeekMLA
@@ -168,7 +169,19 @@ def model_stem_from_npz(npz_path) -> str:
     return stem
 
 
-def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path, tqdm_position: int = 0):
+def train(
+    model,
+    tr_loader,
+    va_loader,
+    epochs,
+    lr,
+    device,
+    model_save_path,
+    tqdm_position: int = 0,
+    *,
+    device_label: str = "",
+    tqdm_kwargs=None,
+):
     model_save_path = Path(model_save_path)
     model_save_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -181,11 +194,23 @@ def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path, tqdm
     best_val = float("inf")
     last_save_time = datetime.now()
 
+    base_tqdm_kwargs = dict(tqdm_kwargs or {})
+    if "position" not in base_tqdm_kwargs:
+        base_tqdm_kwargs["position"] = max(int(tqdm_position), 0)
+    base_tqdm_kwargs.setdefault("dynamic_ncols", True)
+
+    desc_prefix = f"[{device_label}] " if device_label else ""
+
     for epoch in range(1, epochs + 1):
         model.train()
         total_loss = 0
-        pbar = tqdm(tr_loader, desc=f"Epoch {epoch}/{epochs}", position=max(int(tqdm_position), 0))
-        for (xb, basis, mask), yb in pbar:
+        train_pbar = tqdm(
+            tr_loader,
+            total=len(tr_loader),
+            desc=f"{desc_prefix}Epoch {epoch}/{epochs}",
+            **dict(base_tqdm_kwargs),
+        )
+        for (xb, basis, mask), yb in train_pbar:
             xb, basis, mask, yb = xb.to(device), basis.to(device), mask.to(device), yb.to(device)
             optimizer.zero_grad()
             outputs = model(xb, basis, mask)
@@ -196,28 +221,37 @@ def train(model, tr_loader, va_loader, epochs, lr, device, model_save_path, tqdm
             scheduler.step()
 
             total_loss += loss.item()
-            pbar.set_postfix(loss=loss.item())
+            train_pbar.set_postfix_str(f"loss={loss.item():.3f}")
             current_time = datetime.now()
             if current_time - last_save_time >= timedelta(minutes=10):
                 torch.save(model.state_dict(), model_save_path)
                 last_save_time = current_time
+        train_pbar.close()
 
         model.eval()
         val_loss = 0
         correct = 0
+        val_pbar = tqdm(
+            va_loader,
+            total=len(va_loader),
+            desc=f"{desc_prefix}Val {epoch}/{epochs}",
+            **dict(base_tqdm_kwargs),
+        )
         with torch.no_grad():
-            for (xb, basis, mask), yb in va_loader:
+            for (xb, basis, mask), yb in val_pbar:
                 xb, basis, mask, yb = xb.to(device), basis.to(device), mask.to(device), yb.to(device)
                 outputs = model(xb, basis, mask)
                 val_loss += criterion(outputs, yb).item()
                 preds = (torch.sigmoid(outputs) > 0.5).float()
                 correct += (preds == yb).sum().item()
+        val_pbar.close()
 
         avg_loss = total_loss / len(tr_loader)
         val_loss = val_loss / len(va_loader)
         val_acc = correct / len(va_loader.dataset)
         print(
-            f"Epoch {epoch}: Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
+            f"{desc_prefix}Epoch {epoch}: Train Loss: {avg_loss:.4f}, "
+            f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
         )
 
         if val_loss < best_val:
@@ -232,7 +266,12 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=5e-4)
     parser.add_argument("--npu", action="store_true", help="Use available NPUs for training")
-    parser.add_argument("--device_index", type=int, default=None, help="(Multi-process) device index when using --npu")
+    parser.add_argument(
+        "--device_index",
+        type=int,
+        default=0,
+        help="Device index for the selected accelerator backend (e.g., 0, 1, 2, …)",
+    )
     parser.add_argument("--tqdm_position", type=int, default=0, help="Row position for tqdm progress (multi-run)")
     parser.add_argument(
         "--model-save-path",
@@ -248,19 +287,27 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    use_npu = bool(args.npu and hasattr(torch, "npu") and getattr(torch.npu, "is_available", lambda: False)())
+    use_npu = bool(
+        args.npu
+        and hasattr(torch, "npu")
+        and getattr(torch.npu, "is_available", lambda: False)()
+    )
     if use_npu:
-        idx = int(args.device_index or 0)
+        idx = int(args.device_index)
         torch.npu.set_device(idx)
-        device = torch.device("npu")
+        device = torch.device(f"npu:{idx}")
+        device_str = f"npu:{idx}"
+    elif torch.cuda.is_available():
+        idx = int(args.device_index)
+        torch.cuda.set_device(idx)
+        device = torch.device(f"cuda:{idx}")
+        device_str = f"cuda:{idx}"
     else:
-        if torch.cuda.is_available():
-            idx = int(args.device_index or 0)
-            torch.cuda.set_device(idx)
-            device = torch.device(f"cuda:{idx}")
-        else:
-            device = torch.device("cpu")
-    print(f"Using device: {device}")
+        device = torch.device("cpu")
+        device_str = "cpu"
+    print(f"Using device: {device_str}")
+
+    tqdm_kw = dict(position=max(int(args.tqdm_position), 0), dynamic_ncols=True)
 
     basis = get_basis_from_filename(args.npz_file)
     if basis == -1:
@@ -314,5 +361,7 @@ if __name__ == "__main__":
         device,
         str(model_save_path),
         tqdm_position=args.tqdm_position,
+        device_label=device_str,
+        tqdm_kwargs=tqdm_kw,
     )
     print(f"Training complete.\nModel saved to {model_save_path}")

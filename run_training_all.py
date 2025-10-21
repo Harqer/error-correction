@@ -36,7 +36,7 @@ DEFAULT_BATCH_SIZE: int = 16
 MODEL_DIR: Path = Path("ai_models") / "models"
 THIS_DIR = Path(__file__).resolve().parent
 RUN_CREATE_ALL = THIS_DIR / "run_create_all_samples.py"
-EXPERIMENT_ROOT = THIS_DIR / "experiment_data"
+EXPERIMENT_ROOT = Path.home() / "work/google_qec3v5_experiment_data"
 ENV_EXPERIMENT_ROOTS = "ALPHAQUBIT_EXPERIMENT_ROOTS"
 
 
@@ -96,7 +96,8 @@ def main() -> None:
         dest="experiment_roots",
         help=(
             "Stim experiment directory used when automatically generating datasets. "
-            "May be supplied multiple times. Defaults to experiment_data/ or the "
+            "May be supplied multiple times. Defaults to the external "
+            "~/work/google_qec3v5_experiment_data directory or the "
             "ALPHAQUBIT_EXPERIMENT_ROOTS environment variable if set."
         ),
     )

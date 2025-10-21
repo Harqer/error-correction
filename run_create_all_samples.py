@@ -1,8 +1,9 @@
 """Batch helper for generating all experiment .npz bundles.
 
 The google_qec_simulator CLI only accepts a *single* experiment directory at a
-time. This script discovers every directory under ``experiment_data/`` that
-contains ``*.stim`` circuits. It then sequentially invokes the simulator so
+time. This script discovers every directory under the default
+``~/work/google_qec3v5_experiment_data`` folder (or any user supplied paths)
+that contains ``*.stim`` circuits. It then sequentially invokes the simulator so
 that we obtain one ``samples_<experiment>.npz`` per experiment under
 ``pretrain_data/``.
 
@@ -26,6 +27,8 @@ import time
 from pathlib import Path
 
 from google_qec_simulator.main import simulate_folder
+
+DEFAULT_EXPERIMENT_ROOT = Path.home() / "work/google_qec3v5_experiment_data"
 
 def discover_experiments(root: Path) -> list[Path]:
     """Return unique directories underneath ``root`` that host ``*.stim`` files."""
@@ -52,8 +55,8 @@ def main() -> None:
         type=Path,
         help=(
             "Optional directories containing experiment subfolders. Multiple "
-            "directories may be supplied; when omitted the repository's "
-            "experiment_data/ is scanned."
+            "directories may be supplied; when omitted the default "
+            f"{DEFAULT_EXPERIMENT_ROOT} is scanned."
         ),
     )
     parser.add_argument(
@@ -101,7 +104,7 @@ def main() -> None:
     if args.experiment_root:
         exp_roots.extend(args.experiment_root)
     if not exp_roots:
-        exp_roots = [Path(__file__).resolve().parent / "experiment_data"]
+        exp_roots = [DEFAULT_EXPERIMENT_ROOT]
     else:
         # Preserve user-specified ordering while removing duplicates.
         exp_roots = list(dict.fromkeys(exp_roots))

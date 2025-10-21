@@ -47,6 +47,7 @@ RUN_CREATE_ALL = REPO_ROOT / "run_create_all_samples.py"
 GQEC_MAIN = REPO_ROOT / "google_qec_simulator" / "main.py"
 OUTPUT_DIR = REPO_ROOT / "output"
 SIMDATA_DIR = REPO_ROOT / "simulated_data"
+DEFAULT_EXPERIMENT_ROOT = Path.home() / "work/google_qec3v5_experiment_data"
 
 def _run(cmd, cwd=None):
     print(f"\n$ {' '.join(map(str, cmd))}")
@@ -235,10 +236,12 @@ def generate_soft(
     multi_root = len(experiment_roots) > 1
     experiments_by_root: dict[Path, list[Path]] = {}
     total_experiments = 0
+    runnable_roots: list[Path] = []
     for root in experiment_roots:
         if not root.exists():
             print(f"[SOFT] Warning: experiment root {root} does not exist; skipping")
             continue
+        runnable_roots.append(root)
         discovered = _discover_experiments(root)
         experiments_by_root[root] = discovered
         total_experiments += len(discovered)
@@ -256,24 +259,29 @@ def generate_soft(
         )
 
     if RUN_CREATE_ALL.exists():
-        # Use the batch helper so *all* experiments under experiment_data/ are generated.
+        # Use the batch helper so *all* experiments under the provided roots are generated.
         # Forward shots & device so the caller's CLI flags actually take effect.
-        cmd = [
-            sys.executable,
-            str(RUN_CREATE_ALL),
-            "--output-dir",
-            str(SIMDATA_DIR),
-            "--layout",
-            "by_experiment",
-            "--shots",
-            str(soft_shots),
-            "--device",
-            device,
-        ]
-        if experiment_roots:
-            for root in experiment_roots:
-                cmd.append(str(root))
-        _run(cmd)
+        if total_experiments == 0:
+            print(
+                "[SOFT] Skipping run_create_all_samples.py because no experiments were discovered."
+            )
+        else:
+            cmd = [
+                sys.executable,
+                str(RUN_CREATE_ALL),
+                "--output-dir",
+                str(SIMDATA_DIR),
+                "--layout",
+                "by_experiment",
+                "--shots",
+                str(soft_shots),
+                "--device",
+                device,
+            ]
+            if runnable_roots:
+                for root in runnable_roots:
+                    cmd.append(str(root))
+            _run(cmd)
     else:
         # Fallback: call google_qec_simulator/main.py directly on a plausible experiment dir.
         # README shows: python google_qec_simulator/main.py path/to/exp --shots N --device <cpu|cuda|npu>
@@ -284,7 +292,7 @@ def generate_soft(
                 exp_dir = candidate
                 break
         if exp_dir is None:
-            exp_dir = REPO_ROOT / "experiment_data" / "surface_code"
+            exp_dir = DEFAULT_EXPERIMENT_ROOT / "surface_code"
         if not exp_dir.exists():
             # Try tests as a fallback
             exp_dir = REPO_ROOT / "test_experiment_simulator"
@@ -391,7 +399,7 @@ def main():
         dest="experiment_roots",
         help=(
             "Additional directories containing Stim experiments. May be supplied "
-            "multiple times; defaults to the repository's experiment_data/."
+            "multiple times; defaults to the external ~/work/google_qec3v5_experiment_data."
         ),
     )
     args = parser.parse_args()
@@ -406,7 +414,7 @@ def main():
     dem_dir = out_root / "dem"
     si1k_dir = out_root / "si1000"
     soft_dir = out_root
-    experiment_roots = args.experiment_roots or [REPO_ROOT / "experiment_data"]
+    experiment_roots = args.experiment_roots or [DEFAULT_EXPERIMENT_ROOT]
     experiment_roots = [root.resolve() for root in experiment_roots]
     out_root.mkdir(parents=True, exist_ok=True)
     manifest = []

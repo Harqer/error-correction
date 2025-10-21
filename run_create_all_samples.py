@@ -22,10 +22,10 @@ Example
 from __future__ import annotations
 
 import argparse
+import sys
 import subprocess
 import threading
 import time
-import sys
 from pathlib import Path
 
 
@@ -34,6 +34,16 @@ def discover_experiments(root: Path) -> list[Path]:
 
     stim_parents = {path.parent for path in root.rglob("*.stim") if path.is_file()}
     return sorted(stim_parents, key=lambda p: p.relative_to(root).as_posix())
+
+
+def format_duration(seconds: float) -> str:
+    minutes, sec = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h{minutes:02d}m{sec:02d}s"
+    if minutes:
+        return f"{minutes}m{sec:02d}s"
+    return f"{sec}s"
 
 
 def main() -> None:
@@ -77,9 +87,26 @@ def main() -> None:
         action="store_true",
         help="Skip experiments whose samples_*.npz already exist in output-dir",
     )
+    parser.add_argument(
+        "--experiment-root",
+        dest="experiment_root",
+        action="append",
+        type=Path,
+        help=(
+            "Additional experiment directory (alias for positional experiment_roots). "
+            "May be passed multiple times."
+        ),
+    )
     args = parser.parse_args()
 
-    exp_roots = args.experiment_roots or [Path(__file__).resolve().parent / "experiment_data"]
+    exp_roots = list(args.experiment_roots)
+    if args.experiment_root:
+        exp_roots.extend(args.experiment_root)
+    if not exp_roots:
+        exp_roots = [Path(__file__).resolve().parent / "experiment_data"]
+    else:
+        # Preserve user-specified ordering while removing duplicates.
+        exp_roots = list(dict.fromkeys(exp_roots))
     exp_roots = [root.resolve() for root in exp_roots]
     out_root = args.output_dir.resolve()
     out_root.mkdir(parents=True, exist_ok=True)
@@ -103,9 +130,17 @@ def main() -> None:
 
     total = len(experiments)
 
+    print(
+        f"Preparing to run {total} experiment(s) with device={args.device}, shots={args.shots}",
+        flush=True,
+    )
+
     for idx, (exp_root, exp_dir) in enumerate(experiments, start=1):
         rel = exp_dir.relative_to(exp_root)
         rel_name = rel.as_posix()
+        prefix = f"[{idx}/{total}]"
+        print(f"{prefix} Experiment {rel_name}", flush=True)
+
         if args.layout == "flat":
             safe_name = rel_name.replace("/", "_")
             if multi_root:
@@ -137,7 +172,12 @@ def main() -> None:
             str(out_file),
         ]
 
-        print(f"[{idx}/{total}] Running {' '.join(cmd)}", flush=True)
+        print(
+            f"{prefix} Running {' '.join(cmd)} → {out_file}",
+            flush=True,
+        )
+
+        start_time = time.monotonic()
 
         # Stream the child process output so long-running simulations visibly progress.
         with subprocess.Popen(
@@ -156,7 +196,7 @@ def main() -> None:
                 while proc.poll() is None:
                     time.sleep(30)
                     if time.monotonic() - last_line_time >= 30 and proc.poll() is None:
-                        print(f"[{idx}/{total}] … still running", flush=True)
+                        print(f"{prefix} … still running", flush=True)
 
             hb_thread = threading.Thread(target=heartbeat, daemon=True)
             hb_thread.start()
@@ -166,7 +206,7 @@ def main() -> None:
                     last_line_time = time.monotonic()
                     message = line.rstrip()
                     print(
-                        f"[{idx}/{total}] | {message}" if message else f"[{idx}/{total}] |",
+                        f"{prefix} | {message}" if message else f"{prefix} |",
                         flush=True,
                     )
             except KeyboardInterrupt:
@@ -178,7 +218,8 @@ def main() -> None:
             if retcode:
                 raise subprocess.CalledProcessError(retcode, cmd)
 
-        print(f"[{idx}/{total}] DONE → {out_file}", flush=True)
+        elapsed = time.monotonic() - start_time
+        print(f"{prefix} DONE in {format_duration(elapsed)} → {out_file}", flush=True)
 
 
 if __name__ == "__main__":

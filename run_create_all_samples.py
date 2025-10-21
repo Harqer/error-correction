@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import threading
+import time
 import sys
 from pathlib import Path
 
@@ -135,9 +137,48 @@ def main() -> None:
             str(out_file),
         ]
 
-        print(f"[{idx}/{total}] Running {' '.join(cmd)}")
-        subprocess.run(cmd, check=True)
-        print(f"[{idx}/{total}] DONE → {out_file}")
+        print(f"[{idx}/{total}] Running {' '.join(cmd)}", flush=True)
+
+        # Stream the child process output so long-running simulations visibly progress.
+        with subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        ) as proc:
+            assert proc.stdout is not None  # for type-checkers
+
+            # Emit a heartbeat if the simulator is silent for long stretches.
+            last_line_time = time.monotonic()
+
+            def heartbeat() -> None:
+                while proc.poll() is None:
+                    time.sleep(30)
+                    if time.monotonic() - last_line_time >= 30 and proc.poll() is None:
+                        print(f"[{idx}/{total}] … still running", flush=True)
+
+            hb_thread = threading.Thread(target=heartbeat, daemon=True)
+            hb_thread.start()
+
+            try:
+                for line in proc.stdout:
+                    last_line_time = time.monotonic()
+                    message = line.rstrip()
+                    print(
+                        f"[{idx}/{total}] | {message}" if message else f"[{idx}/{total}] |",
+                        flush=True,
+                    )
+            except KeyboardInterrupt:
+                proc.terminate()
+                proc.wait()
+                raise
+
+            retcode = proc.wait()
+            if retcode:
+                raise subprocess.CalledProcessError(retcode, cmd)
+
+        print(f"[{idx}/{total}] DONE → {out_file}", flush=True)
 
 
 if __name__ == "__main__":

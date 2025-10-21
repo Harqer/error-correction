@@ -22,12 +22,10 @@ Example
 from __future__ import annotations
 
 import argparse
-import sys
-import subprocess
-import threading
 import time
 from pathlib import Path
 
+from google_qec_simulator.main import simulate_folder
 
 def discover_experiments(root: Path) -> list[Path]:
     """Return unique directories underneath ``root`` that host ``*.stim`` files."""
@@ -159,64 +157,18 @@ def main() -> None:
             print(f"[{idx}/{total}] Skip existing {out_file.name}")
             continue
 
-        cmd = [
-            sys.executable,
-            "-m",
-            "google_qec_simulator.main",
-            str(exp_dir),
-            "--shots",
-            str(args.shots),
-            "--device",
-            args.device,
-            "--out",
-            str(out_file),
-        ]
-
-        print(
-            f"{prefix} Running {' '.join(cmd)} → {out_file}",
-            flush=True,
-        )
+        print(f"{prefix} Running experiment with simulate_folder → {out_file}", flush=True)
 
         start_time = time.monotonic()
-
-        # Stream the child process output so long-running simulations visibly progress.
-        with subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        ) as proc:
-            assert proc.stdout is not None  # for type-checkers
-
-            # Emit a heartbeat if the simulator is silent for long stretches.
-            last_line_time = time.monotonic()
-
-            def heartbeat() -> None:
-                while proc.poll() is None:
-                    time.sleep(30)
-                    if time.monotonic() - last_line_time >= 30 and proc.poll() is None:
-                        print(f"{prefix} … still running", flush=True)
-
-            hb_thread = threading.Thread(target=heartbeat, daemon=True)
-            hb_thread.start()
-
-            try:
-                for line in proc.stdout:
-                    last_line_time = time.monotonic()
-                    message = line.rstrip()
-                    print(
-                        f"{prefix} | {message}" if message else f"{prefix} |",
-                        flush=True,
-                    )
-            except KeyboardInterrupt:
-                proc.terminate()
-                proc.wait()
-                raise
-
-            retcode = proc.wait()
-            if retcode:
-                raise subprocess.CalledProcessError(retcode, cmd)
+        try:
+            simulate_folder(
+                exp_dir=exp_dir,
+                out_file=out_file,
+                shots=args.shots,
+                device=args.device,
+            )
+        except Exception as exc:  # pragma: no cover - surfaced to CLI for debugging
+            raise RuntimeError(f"{prefix} Simulation failed for {rel_name}") from exc
 
         elapsed = time.monotonic() - start_time
         print(f"{prefix} DONE in {format_duration(elapsed)} → {out_file}", flush=True)

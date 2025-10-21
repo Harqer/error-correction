@@ -85,6 +85,8 @@ python make_all_pretraining_noise.py \
   --soft-shots 4000000 \
   --soft-device auto \
   --out-dir pretrain_data
+# 若实验 Stim 位于额外目录（例如 Google QEC 数据集），可重复传入 --experiment-root：
+# python make_all_pretraining_noise.py --out-dir pretrain_data --experiment-root experiment_data --experiment-root ~/work/google_qec3v5_experiment_data
 ```
 
 该脚本会依次调用 `generate_data.py`（DEM/SI1000）与 `run_create_all_samples.py`（soft/IQ），并把生成的 `.npy`/`.npz` 文件收集到 `--out-dir` 指定的目录，同时写出 `MANIFEST.json`（记录时间戳与所有产物）。soft/IQ 噪声会按照实验名称自动分目录存放，例如 `pretrain_data/<experiment>/samples_*.npz`，便于按实验拆分训练数据。上述配置对应约 $8.5\times10^6$ 条离散综合样本与 4.0M 次 soft shots，需要约 15 GB（布尔综合）+1.1 GB（soft shots）存储。如资源受限，可按比例缩放各 `--*-samples`，保持不同噪声类型的相对比重。
@@ -96,6 +98,7 @@ python make_all_pretraining_noise.py \
 ```bash
 python run_create_all_samples.py --shots 2000
 python run_create_all_samples.py --skip-existing --device npu  # 支持跳过已生成文件与 NPU 加速
+# 支持多目录：python run_create_all_samples.py --experiment-root experiment_data --experiment-root ~/work/google_qec3v5_experiment_data
 ```
 
 脚本会递归查找含 `.stim` 的实验目录，将输出写入 `simulated_data/`，并按相对路径命名，例如 `simulated_data/samples_folder_subfolder.npz`。
@@ -127,6 +130,8 @@ python ai_models/train.py --config configs/dem.yaml
 python run_training_all.py
 python run_training_all.py --npu  # 自动检测 Ascend NPU 并行调度
 python run_training_all.py --epochs 1 --batch-size 32 --max-samples 1024  # 本地快速冒烟
+# 自动生成缺失数据时可指定 Stim 根目录：
+# python run_training_all.py --experiment-root experiment_data --experiment-root ~/work/google_qec3v5_experiment_data
 ```
 
 在运行批量训练前，建议先执行上一节的一键脚本：

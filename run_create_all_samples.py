@@ -39,8 +39,12 @@ def main() -> None:
     parser.add_argument(
         "--experiment-root",
         type=Path,
-        default=Path(__file__).resolve().parent / "experiment_data",
-        help="Top-level directory that holds experiment subfolders",
+        action="append",
+        dest="experiment_roots",
+        help=(
+            "Top-level directory that holds experiment subfolders. May be supplied "
+            "multiple times; when omitted the repository's experiment_data/ is used."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -73,29 +77,49 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    exp_root = args.experiment_root.resolve()
+    exp_roots = args.experiment_roots or [Path(__file__).resolve().parent / "experiment_data"]
+    exp_roots = [root.resolve() for root in exp_roots]
     out_root = args.output_dir.resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    experiments = discover_experiments(exp_root)
+    multi_root = len(exp_roots) > 1
+
+    experiments: list[tuple[Path, Path]] = []
+    for root in exp_roots:
+        if not root.exists():
+            print(f"Warning: experiment root {root} does not exist; skipping")
+            continue
+        found = discover_experiments(root)
+        if not found:
+            print(f"Warning: no experiments with *.stim found under {root}")
+            continue
+        print(f"Found {len(found)} experiment folder(s) under {root}")
+        experiments.extend((root, exp_dir) for exp_dir in found)
+
     if not experiments:
-        raise SystemExit(f"No experiments with *.stim found under {exp_root}")
+        raise SystemExit("No experiments with *.stim found in the provided roots")
 
-    print(f"Found {len(experiments)} experiment folder(s) under {exp_root}")
+    total = len(experiments)
 
-    for idx, exp_dir in enumerate(experiments, start=1):
-        rel_name = exp_dir.relative_to(exp_root).as_posix()
+    for idx, (exp_root, exp_dir) in enumerate(experiments, start=1):
+        rel = exp_dir.relative_to(exp_root)
+        rel_name = rel.as_posix()
         if args.layout == "flat":
             safe_name = rel_name.replace("/", "_")
+            if multi_root:
+                safe_name = f"{exp_root.name}_{safe_name}"
             out_file = out_root / f"samples_{safe_name}.npz"
         else:
-            # Preserve experiment folder structure
-            rel_dir = out_root / rel_name
+            # Preserve experiment folder structure and optionally prefix by root name
+            rel_dir = out_root
+            if multi_root:
+                rel_dir /= exp_root.name
+            rel_dir /= rel
             rel_dir.mkdir(parents=True, exist_ok=True)
             out_file = rel_dir / f"samples_{exp_dir.name}.npz"
 
         if args.skip_existing and out_file.exists():
-            print(f"[{idx}/{len(experiments)}] Skip existing {out_file.name}")
+            print(f"[{idx}/{total}] Skip existing {out_file.name}")
             continue
 
         cmd = [
@@ -111,9 +135,9 @@ def main() -> None:
             str(out_file),
         ]
 
-        print(f"[{idx}/{len(experiments)}] Running {' '.join(cmd)}")
+        print(f"[{idx}/{total}] Running {' '.join(cmd)}")
         subprocess.run(cmd, check=True)
-        print(f"[{idx}/{len(experiments)}] DONE → {out_file}")
+        print(f"[{idx}/{total}] DONE → {out_file}")
 
 
 if __name__ == "__main__":

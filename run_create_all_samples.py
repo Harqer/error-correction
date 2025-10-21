@@ -4,10 +4,10 @@ The google_qec_simulator CLI only accepts a *single* experiment directory at a
 time. This script discovers every directory under ``experiment_data/`` that
 contains ``*.stim`` circuits. It then sequentially invokes the simulator so
 that we obtain one ``samples_<experiment>.npz`` per experiment under
-``simulated_data/``.
+``pretrain_data/``.
 
 By default we **preserve the experiment folder structure** under
-``simulated_data/`` so later stages (pretraining/training) can keep a
+``pretrain_data/`` so later stages (pretraining/training) can keep a
 one-model-per-experiment workflow.
 
 Example
@@ -15,7 +15,7 @@ Example
 
 .. code-block:: bash
 
-   python run_create_all_samples.py --shots 2000 --device cuda
+   python run_create_all_samples.py ~/work/google_qec3v5_experiment_data --shots 2000 --device cuda
 
 """
 
@@ -39,19 +39,19 @@ def discover_experiments(root: Path) -> list[Path]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate .npz bundles for every experiment")
     parser.add_argument(
-        "--experiment-root",
+        "experiment_roots",
+        nargs="*",
         type=Path,
-        action="append",
-        dest="experiment_roots",
         help=(
-            "Top-level directory that holds experiment subfolders. May be supplied "
-            "multiple times; when omitted the repository's experiment_data/ is used."
+            "Optional directories containing experiment subfolders. Multiple "
+            "directories may be supplied; when omitted the repository's "
+            "experiment_data/ is scanned."
         ),
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path(__file__).resolve().parent / "simulated_data",
+        default=Path(__file__).resolve().parent / "pretrain_data",
         help="Destination directory for generated samples_*.npz files",
     )
     parser.add_argument(

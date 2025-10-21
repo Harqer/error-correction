@@ -261,6 +261,8 @@ def generate_soft(
         cmd = [
             sys.executable,
             str(RUN_CREATE_ALL),
+            "--output-dir",
+            str(SIMDATA_DIR),
             "--layout",
             "by_experiment",
             "--shots",
@@ -270,7 +272,7 @@ def generate_soft(
         ]
         if experiment_roots:
             for root in experiment_roots:
-                cmd += ["--experiment-root", str(root)]
+                cmd.append(str(root))
         _run(cmd)
     else:
         # Fallback: call google_qec_simulator/main.py directly on a plausible experiment dir.

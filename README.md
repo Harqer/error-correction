@@ -34,7 +34,6 @@ pip install -r requirements.txt
 ```plaintext
 ├── ai_models/                   # 模型训练与解码脚本
 ├── configs/                     # 实验配置 YAML 文件
-├── experiment_data/             # 实验电路与 Stim 描述
 ├── simulator/                   # 量子纠错仿真器
 ├── simulated_data/              # google_qec_simulator 生成的 .npz（脚本可自动建立）
 ├── generate_data.py             # 训练数据生成脚本
@@ -43,6 +42,9 @@ pip install -r requirements.txt
 ├── models/                      # 可选：手动放置 .pth 权重的目录
 └── README.md                    # 项目说明
 ```
+
+> **提示**：真实实验 Stim 电路存放在外部目录
+> ``~/work/google_qec3v5_experiment_data``，仓库内不再附带 `experiment_data/` 副本。
 
 ## 工作流程
 
@@ -86,24 +88,24 @@ python make_all_pretraining_noise.py \
   --soft-device auto \
   --out-dir pretrain_data
 # 若实验 Stim 位于额外目录（例如 Google QEC 数据集），可重复传入 --experiment-root：
-# python make_all_pretraining_noise.py --out-dir pretrain_data --experiment-root experiment_data --experiment-root ~/work/google_qec3v5_experiment_data
+# python make_all_pretraining_noise.py --out-dir pretrain_data --experiment-root ~/work/google_qec3v5_experiment_data
 ```
 
 该脚本会依次调用 `generate_data.py`（DEM/SI1000）与 `run_create_all_samples.py`（soft/IQ），并把生成的 `.npy`/`.npz` 文件收集到 `--out-dir` 指定的目录，同时写出 `MANIFEST.json`（记录时间戳与所有产物）。soft/IQ 噪声会按照实验名称自动分目录存放，例如 `pretrain_data/<experiment>/samples_*.npz`，便于按实验拆分训练数据。上述配置对应约 $8.5\times10^6$ 条离散综合样本与 4.0M 次 soft shots，需要约 15 GB（布尔综合）+1.1 GB（soft shots）存储。如资源受限，可按比例缩放各 `--*-samples`，保持不同噪声类型的相对比重。
 
 #### 批量生成实验数据
 
-若 `experiment_data/` 中含有多个实验子目录，可批量调用模拟器生成 `samples_<experiment>.npz`：
+若 `~/work/google_qec3v5_experiment_data/` 中含有多个实验子目录，可批量调用模拟器生成 `samples_<experiment>.npz`：
 
 ```bash
 python run_create_all_samples.py --shots 2000
 python run_create_all_samples.py --skip-existing --device npu  # 支持跳过已生成文件与 NPU 加速
-# 支持多目录：python run_create_all_samples.py experiment_data ~/work/google_qec3v5_experiment_data
+# 支持多目录：python run_create_all_samples.py ~/work/google_qec3v5_experiment_data /path/to/others
 ```
 
 脚本会递归查找含 `.stim` 的实验目录，将输出写入 `pretrain_data/`，并按相对路径命名，例如 `pretrain_data/samples_folder_subfolder.npz`。
 该流程直接调用 `google_qec_simulator.main.simulate_folder` 完成采样，因此运行期间会实时输出 `[scan]`/`[sample]` 等进度信息，便于观察当前实验与累计耗时。
-因此上述单行命令会自动遍历 `experiment_data/` 中的全部实验并依次生成噪声。
+因此上述单行命令会自动遍历 `~/work/google_qec3v5_experiment_data/` 中的全部实验并依次生成噪声。
 
 ### 2. 检查与浏览数据
 
@@ -132,7 +134,7 @@ python run_training_all.py
 python run_training_all.py --npu  # 自动检测 Ascend NPU 并行调度
 python run_training_all.py --epochs 1 --batch-size 32 --max-samples 1024  # 本地快速冒烟
 # 自动生成缺失数据时可指定 Stim 根目录：
-# python run_training_all.py --experiment-root experiment_data --experiment-root ~/work/google_qec3v5_experiment_data
+# python run_training_all.py --experiment-root ~/work/google_qec3v5_experiment_data
 ```
 
 在运行批量训练前，建议先执行上一节的一键脚本：
@@ -177,7 +179,7 @@ python run_decode_all.py --model ai_models/models/
 `plot_alphaquibit_results.py` 可以对经过微调的实验文件夹计算 LER 并绘制柱状图：
 
 ```bash
-python plot_alphaquibit_results.py --data-root experiment_data/sycamore_runs --model-dir .
+python plot_alphaquibit_results.py --data-root ~/work/google_qec3v5_experiment_data/sycamore_runs --model-dir .
 ```
 
 - `--data-root`：包含多个实验子目录（每个子目录需含 `detection_events.b8`、`obs_flips_actual.01` 等文件）。

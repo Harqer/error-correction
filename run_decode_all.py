@@ -10,9 +10,10 @@ from typing import Iterable, List, Sequence, Set
 
 DEFAULT_PATTERNS: Sequence[str] = ("*.npy", "*.npz")
 DEFAULT_DATA_ROOT = Path("output")
+DEFAULT_EXPERIMENT_ROOT = Path.home() / "work/google_qec3v5_experiment_data"
 FALLBACK_DATA_ROOTS: Sequence[Path] = (
     Path("simulated_data"),
-    Path("experiment_data"),
+    DEFAULT_EXPERIMENT_ROOT,
 )
 DECODE_SCRIPT = Path("ai_models/decode.py")
 MODEL_SEARCH_DIRS: Sequence[Path] = (

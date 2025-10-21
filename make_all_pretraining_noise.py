@@ -236,10 +236,12 @@ def generate_soft(
     multi_root = len(experiment_roots) > 1
     experiments_by_root: dict[Path, list[Path]] = {}
     total_experiments = 0
+    runnable_roots: list[Path] = []
     for root in experiment_roots:
         if not root.exists():
             print(f"[SOFT] Warning: experiment root {root} does not exist; skipping")
             continue
+        runnable_roots.append(root)
         discovered = _discover_experiments(root)
         experiments_by_root[root] = discovered
         total_experiments += len(discovered)
@@ -259,22 +261,27 @@ def generate_soft(
     if RUN_CREATE_ALL.exists():
         # Use the batch helper so *all* experiments under the provided roots are generated.
         # Forward shots & device so the caller's CLI flags actually take effect.
-        cmd = [
-            sys.executable,
-            str(RUN_CREATE_ALL),
-            "--output-dir",
-            str(SIMDATA_DIR),
-            "--layout",
-            "by_experiment",
-            "--shots",
-            str(soft_shots),
-            "--device",
-            device,
-        ]
-        if experiment_roots:
-            for root in experiment_roots:
-                cmd.append(str(root))
-        _run(cmd)
+        if total_experiments == 0:
+            print(
+                "[SOFT] Skipping run_create_all_samples.py because no experiments were discovered."
+            )
+        else:
+            cmd = [
+                sys.executable,
+                str(RUN_CREATE_ALL),
+                "--output-dir",
+                str(SIMDATA_DIR),
+                "--layout",
+                "by_experiment",
+                "--shots",
+                str(soft_shots),
+                "--device",
+                device,
+            ]
+            if runnable_roots:
+                for root in runnable_roots:
+                    cmd.append(str(root))
+            _run(cmd)
     else:
         # Fallback: call google_qec_simulator/main.py directly on a plausible experiment dir.
         # README shows: python google_qec_simulator/main.py path/to/exp --shots N --device <cpu|cuda|npu>

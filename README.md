@@ -70,7 +70,7 @@ python generate_data.py --model paper_aligned --basis x --samples 10000
 
 ```bash
 python -m google_qec_simulator.main path/to/exp --shots 10000 --device npu
-# 默认输出写入 simulated_data/samples_<实验文件夹>.npz，可用 --out 自定义位置
+# 默认输出写入 pretrain_data/samples_<实验文件夹>.npz，可用 --out 自定义位置
 ```
 
 #### 预生成大规模预训练数据
@@ -101,7 +101,7 @@ python run_create_all_samples.py --skip-existing --device npu  # 支持跳过已
 # 支持多目录：python run_create_all_samples.py --experiment-root experiment_data --experiment-root ~/work/google_qec3v5_experiment_data
 ```
 
-脚本会递归查找含 `.stim` 的实验目录，将输出写入 `simulated_data/`，并按相对路径命名，例如 `simulated_data/samples_folder_subfolder.npz`。
+脚本会递归查找含 `.stim` 的实验目录，将输出写入 `pretrain_data/`，并按相对路径命名，例如 `pretrain_data/samples_folder_subfolder.npz`。
 因此上述单行命令会自动遍历 `experiment_data/` 中的全部实验并依次生成噪声。 
 
 ### 2. 检查与浏览数据

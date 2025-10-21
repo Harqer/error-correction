@@ -261,6 +261,8 @@ def generate_soft(
         cmd = [
             sys.executable,
             str(RUN_CREATE_ALL),
+            "--output-dir",
+            str(SIMDATA_DIR),
             "--layout",
             "by_experiment",
             "--shots",

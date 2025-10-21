@@ -18,7 +18,7 @@ import time
 from contextlib import suppress
 from itertools import cycle
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
+from typing import Dict, Iterator, List, Optional, Sequence, Set, Tuple
 
 from ai_models.model_mla import get_basis_from_filename, model_stem_from_npz
 from ai_models.pauli_plus_dataset import find_label_key
@@ -117,6 +117,7 @@ def main() -> None:
     else:
         data_roots = [Path("pretrain_data")]
         fallback_roots = [Path("simulated_data")]
+    primary_data_root = data_roots[0] if data_roots else Path("pretrain_data")
 
     searched_roots: List[Path] = []
     all_npz: List[Path] = []
@@ -140,7 +141,9 @@ def main() -> None:
     discovered = sum(collect(root) for root in data_roots)
     if discovered == 0 and not args.data_roots:
         auto_generated = _auto_generate_datasets(
-            fallback_roots, use_npu=args.npu, experiment_roots=experiment_roots
+            use_npu=args.npu,
+            experiment_roots=experiment_roots,
+            output_root=primary_data_root,
         )
         if auto_generated:
             all_npz.clear()
@@ -403,12 +406,10 @@ def _resolve_experiment_roots(cli_roots: Optional[Sequence[Path]]) -> List[Path]
 
 
 def _auto_generate_datasets(
-    fallback_roots: Iterable[Path], *, use_npu: bool, experiment_roots: Sequence[Path]
+    *, output_root: Path, use_npu: bool, experiment_roots: Sequence[Path]
 ) -> bool:
     """Generate missing experiment datasets using ``run_create_all_samples``."""
 
-    if not fallback_roots:
-        return False
     if not RUN_CREATE_ALL.exists() or not RUN_CREATE_ALL.is_file():
         return False
     if not experiment_roots:
@@ -418,19 +419,15 @@ def _auto_generate_datasets(
     if not existing_roots:
         return False
 
-    try:
-        first_root = next(iter(fallback_roots))
-    except StopIteration:
-        return False
-
-    first_root.mkdir(parents=True, exist_ok=True)
+    output_root = output_root.expanduser().resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
 
     device = _default_simulator_device(use_npu=use_npu)
     cmd = [
         sys.executable,
         str(RUN_CREATE_ALL),
         "--output-dir",
-        str(first_root),
+        str(output_root),
         "--layout",
         "by_experiment",
         "--skip-existing",

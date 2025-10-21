@@ -221,22 +221,37 @@ def generate_si1000(si1000_samples: int, p_grid: list, dest_root: Path, manifest
     finally:
         _restore_text(cfg_path, bak)
 
-def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list):
+def generate_soft(
+    soft_shots: int,
+    device: str,
+    dest_root: Path,
+    experiment_roots: list[Path],
+    manifest: list,
+):
     print("\n=== [SOFT] Generating soft (I/Q) readout data ===")
     device = _detect_device(device)
     print(f"[SOFT] Selected device: {device}")
     before = _snapshot(SIMDATA_DIR)
-    exp_root = REPO_ROOT / "experiment_data"
-    experiments = _discover_experiments(exp_root)
-    if experiments:
-        rel_paths = [p.relative_to(exp_root).as_posix() for p in experiments]
+    multi_root = len(experiment_roots) > 1
+    experiments_by_root: dict[Path, list[Path]] = {}
+    total_experiments = 0
+    for root in experiment_roots:
+        if not root.exists():
+            print(f"[SOFT] Warning: experiment root {root} does not exist; skipping")
+            continue
+        discovered = _discover_experiments(root)
+        experiments_by_root[root] = discovered
+        total_experiments += len(discovered)
+        if discovered:
+            header = f"[SOFT] Experiments under {root}:"
+            rel_paths = [p.relative_to(root).as_posix() for p in discovered]
+            print(header + "\n  - " + "\n  - ".join(rel_paths))
+        else:
+            print(f"[SOFT] Warning: No experiments discovered under {root}")
+
+    if total_experiments == 0:
         print(
-            "[SOFT] Experiments discovered under experiment_data/:\n  - "
-            + "\n  - ".join(rel_paths)
-        )
-    else:
-        print(
-            "[SOFT] Warning: No experiments discovered under experiment_data/. "
+            "[SOFT] Warning: No experiments discovered in the provided roots. "
             "Only datasets produced during this run will be collected."
         )
 
@@ -253,13 +268,21 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
             "--device",
             device,
         ]
-        if exp_root.exists():
-            cmd += ["--experiment-root", str(exp_root)]
+        if experiment_roots:
+            for root in experiment_roots:
+                cmd += ["--experiment-root", str(root)]
         _run(cmd)
     else:
         # Fallback: call google_qec_simulator/main.py directly on a plausible experiment dir.
         # README shows: python google_qec_simulator/main.py path/to/exp --shots N --device <cpu|cuda|npu>
-        exp_dir = REPO_ROOT / "experiment_data" / "surface_code"
+        exp_dir = None
+        for root in experiment_roots:
+            candidate = root / "surface_code"
+            if candidate.exists():
+                exp_dir = candidate
+                break
+        if exp_dir is None:
+            exp_dir = REPO_ROOT / "experiment_data" / "surface_code"
         if not exp_dir.exists():
             # Try tests as a fallback
             exp_dir = REPO_ROOT / "test_experiment_simulator"
@@ -273,30 +296,39 @@ def generate_soft(soft_shots: int, device: str, dest_root: Path, manifest: list)
     copied_any = False
     missing_experiments: list[str] = []
 
-    if experiments:
-        for exp_dir in experiments:
-            rel = exp_dir.relative_to(exp_root)
-            sim_dir = SIMDATA_DIR / rel
-            files = sorted(sim_dir.glob("*.npz")) if sim_dir.exists() else []
-            if not files:
-                missing_experiments.append(rel.as_posix())
+    if total_experiments:
+        for root, exp_list in experiments_by_root.items():
+            if not exp_list:
                 continue
+            for exp_dir in exp_list:
+                rel = exp_dir.relative_to(root)
+                sim_dir = SIMDATA_DIR
+                dest_dir = dest_root
+                if multi_root:
+                    sim_dir = sim_dir / root.name
+                    dest_dir = dest_dir / root.name
+                sim_dir = sim_dir / rel
+                dest_dir = dest_dir / rel
+                files = sorted(sim_dir.glob("*.npz")) if sim_dir.exists() else []
+                if not files:
+                    missing_experiments.append(f"{root}:{rel.as_posix()}")
+                    continue
 
-            copied_files: list[str] = []
-            for src in files:
-                dst = dest_root / rel / src.name
-                _safe_copy(src, dst)
-                copied_files.append(str(dst))
-                copied_any = True
+                copied_files: list[str] = []
+                for src in files:
+                    dst = dest_dir / src.name
+                    _safe_copy(src, dst)
+                    copied_files.append(str(dst))
+                    copied_any = True
 
-            manifest.append({
-                "kind": "soft",
-                "shots": soft_shots,
-                "device": device,
-                "files": copied_files,
-                "experiment": rel.as_posix(),
-                "new_sources": [str(src) for src in files if src.resolve() in created],
-            })
+                manifest.append({
+                    "kind": "soft",
+                    "shots": soft_shots,
+                    "device": device,
+                    "files": copied_files,
+                    "experiment": (Path(root.name) / rel).as_posix() if multi_root else rel.as_posix(),
+                    "new_sources": [str(src) for src in files if src.resolve() in created],
+                })
     else:
         # Fallback: no experiment discovery available – copy every .npz in simulated_data.
         all_npz = sorted(SIMDATA_DIR.rglob("*.npz"))
@@ -350,6 +382,16 @@ def main():
                         help="Device for soft/IQ sampling (auto tries NPU, then CUDA).")
     parser.add_argument("--out-dir", type=str, default="pretrain_data",
                         help="Where to collect consolidated datasets.")
+    parser.add_argument(
+        "--experiment-root",
+        type=Path,
+        action="append",
+        dest="experiment_roots",
+        help=(
+            "Additional directories containing Stim experiments. May be supplied "
+            "multiple times; defaults to the repository's experiment_data/."
+        ),
+    )
     args = parser.parse_args()
 
     # Sanity checks
@@ -362,6 +404,8 @@ def main():
     dem_dir = out_root / "dem"
     si1k_dir = out_root / "si1000"
     soft_dir = out_root
+    experiment_roots = args.experiment_roots or [REPO_ROOT / "experiment_data"]
+    experiment_roots = [root.resolve() for root in experiment_roots]
     out_root.mkdir(parents=True, exist_ok=True)
     manifest = []
 
@@ -373,7 +417,7 @@ def main():
     generate_si1000(args.si1000_samples, p_grid, si1k_dir, manifest)
 
     # 3) Soft/IQ (google_qec_simulator)
-    generate_soft(args.soft_shots, args.soft_device, soft_dir, manifest)
+    generate_soft(args.soft_shots, args.soft_device, soft_dir, experiment_roots, manifest)
 
     # Write manifest
     mf_path = out_root / "MANIFEST.json"

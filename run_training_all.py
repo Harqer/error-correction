@@ -37,6 +37,7 @@ MODEL_DIR: Path = Path("ai_models") / "models"
 THIS_DIR = Path(__file__).resolve().parent
 RUN_CREATE_ALL = THIS_DIR / "run_create_all_samples.py"
 EXPERIMENT_ROOT = THIS_DIR / "experiment_data"
+ENV_EXPERIMENT_ROOTS = "ALPHAQUBIT_EXPERIMENT_ROOTS"
 
 
 def main() -> None:
@@ -88,7 +89,20 @@ def main() -> None:
             "desired dataset roots."
         ),
     )
+    parser.add_argument(
+        "--experiment-root",
+        type=Path,
+        action="append",
+        dest="experiment_roots",
+        help=(
+            "Stim experiment directory used when automatically generating datasets. "
+            "May be supplied multiple times. Defaults to experiment_data/ or the "
+            "ALPHAQUBIT_EXPERIMENT_ROOTS environment variable if set."
+        ),
+    )
     args = parser.parse_args()
+
+    experiment_roots = _resolve_experiment_roots(args.experiment_roots)
 
     # Collect all npz files from the requested data directories.  When the user
     # does not provide ``--data-root`` we prefer ``pretrain_data/`` (populated by
@@ -126,7 +140,7 @@ def main() -> None:
     discovered = sum(collect(root) for root in data_roots)
     if discovered == 0 and not args.data_roots:
         auto_generated = _auto_generate_datasets(
-            fallback_roots, use_npu=args.npu
+            fallback_roots, use_npu=args.npu, experiment_roots=experiment_roots
         )
         if auto_generated:
             all_npz.clear()
@@ -367,8 +381,29 @@ def _verify_models(models: Dict[Path, Path], start_time: float) -> None:
     print(f"All models saved successfully in {MODEL_DIR.resolve()}.")
 
 
+def _resolve_experiment_roots(cli_roots: Optional[Sequence[Path]]) -> List[Path]:
+    """Return the list of experiment directories to probe for Stim circuits."""
+
+    if cli_roots:
+        return [root.resolve() for root in cli_roots]
+
+    env_value = os.environ.get(ENV_EXPERIMENT_ROOTS, "")
+    roots: List[Path] = []
+    if env_value:
+        for chunk in env_value.split(os.pathsep):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            roots.append(Path(chunk).expanduser().resolve())
+
+    if not roots:
+        roots = [EXPERIMENT_ROOT]
+
+    return roots
+
+
 def _auto_generate_datasets(
-    fallback_roots: Iterable[Path], *, use_npu: bool
+    fallback_roots: Iterable[Path], *, use_npu: bool, experiment_roots: Sequence[Path]
 ) -> bool:
     """Generate missing experiment datasets using ``run_create_all_samples``."""
 
@@ -376,7 +411,11 @@ def _auto_generate_datasets(
         return False
     if not RUN_CREATE_ALL.exists() or not RUN_CREATE_ALL.is_file():
         return False
-    if not EXPERIMENT_ROOT.exists():
+    if not experiment_roots:
+        return False
+
+    existing_roots = [root for root in experiment_roots if root.exists()]
+    if not existing_roots:
         return False
 
     try:
@@ -390,8 +429,6 @@ def _auto_generate_datasets(
     cmd = [
         sys.executable,
         str(RUN_CREATE_ALL),
-        "--experiment-root",
-        str(EXPERIMENT_ROOT),
         "--output-dir",
         str(first_root),
         "--layout",
@@ -400,6 +437,9 @@ def _auto_generate_datasets(
         "--device",
         device,
     ]
+
+    for root in existing_roots:
+        cmd += ["--experiment-root", str(root)]
 
     print(
         "No datasets detected – generating simulated samples for all experiments\n"

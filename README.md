@@ -102,7 +102,8 @@ python run_create_all_samples.py --skip-existing --device npu  # 支持跳过已
 ```
 
 脚本会递归查找含 `.stim` 的实验目录，将输出写入 `pretrain_data/`，并按相对路径命名，例如 `pretrain_data/samples_folder_subfolder.npz`。
-因此上述单行命令会自动遍历 `experiment_data/` 中的全部实验并依次生成噪声。 
+该流程直接调用 `google_qec_simulator.main.simulate_folder` 完成采样，因此运行期间会实时输出 `[scan]`/`[sample]` 等进度信息，便于观察当前实验与累计耗时。
+因此上述单行命令会自动遍历 `experiment_data/` 中的全部实验并依次生成噪声。
 
 ### 2. 检查与浏览数据
 

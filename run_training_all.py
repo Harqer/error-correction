@@ -439,7 +439,7 @@ def _auto_generate_datasets(
     ]
 
     for root in existing_roots:
-        cmd += ["--experiment-root", str(root)]
+        cmd.append(str(root))
 
     print(
         "No datasets detected – generating simulated samples for all experiments\n"

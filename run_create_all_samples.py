@@ -15,7 +15,7 @@ Example
 
 .. code-block:: bash
 
-   python run_create_all_samples.py --shots 2000 --device cuda
+   python run_create_all_samples.py ~/work/google_qec3v5_experiment_data --shots 2000 --device cuda
 
 """
 
@@ -39,13 +39,13 @@ def discover_experiments(root: Path) -> list[Path]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate .npz bundles for every experiment")
     parser.add_argument(
-        "--experiment-root",
+        "experiment_roots",
+        nargs="*",
         type=Path,
-        action="append",
-        dest="experiment_roots",
         help=(
-            "Top-level directory that holds experiment subfolders. May be supplied "
-            "multiple times; when omitted the repository's experiment_data/ is used."
+            "Optional directories containing experiment subfolders. Multiple "
+            "directories may be supplied; when omitted the repository's "
+            "experiment_data/ is scanned."
         ),
     )
     parser.add_argument(

@@ -98,7 +98,7 @@ python make_all_pretraining_noise.py \
 ```bash
 python run_create_all_samples.py --shots 2000
 python run_create_all_samples.py --skip-existing --device npu  # 支持跳过已生成文件与 NPU 加速
-# 支持多目录：python run_create_all_samples.py --experiment-root experiment_data --experiment-root ~/work/google_qec3v5_experiment_data
+# 支持多目录：python run_create_all_samples.py experiment_data ~/work/google_qec3v5_experiment_data
 ```
 
 脚本会递归查找含 `.stim` 的实验目录，将输出写入 `pretrain_data/`，并按相对路径命名，例如 `pretrain_data/samples_folder_subfolder.npz`。

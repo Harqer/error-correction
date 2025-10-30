@@ -12,6 +12,14 @@ AlphaQubit 提供从量子纠错仿真数据生成、模型训练到解码评估
 - **模型管理**：训练脚本统一把权重保存至 `ai_models/models/`，解码脚本会在该目录及仓库根目录、`ai_models/checkpoints/` 等位置自动搜寻 `.pth` 文件。
 - **可视化工具**：提供 `npy_viewer.py`（.npy 查看）与 `plot_alphaqubit_results.py`（性能曲线绘制）。
 
+## 模型架构与数据说明
+
+- **基础设施**：解码器基于 PyTorch 实现，核心由三部分组成：稳定子特征嵌入器、堆叠的改良 Transformer 层（内部使用 DeepSeek MLA 多头注意力）、以及读取逻辑误差对数似然的卷积+MLP 头部。【F:ai_models/model_mla.py†L16-L143】
+- **输入特征**：每个样本的张量形状为 `(N, R, S, 3)`，其中第 0 通道是离散检测事件比特，第 1、2 通道分别为软读出后计算态与泄漏态的后验概率；这些通道由仿真脚本在采样时将检测比特与两路 soft channel 拼接而成。【F:google_qec_simulator/data_manager.py†L5-L28】【F:google_qec_simulator/experiment_simulator.py†L24-L33】
+- **输出含义**：模型输出单个标量对数几率（logit），与 `BCEWithLogitsLoss` 搭配训练，表示对应逻辑比特发生错误的概率；推理时可通过 `torch.sigmoid` 转换为 [0,1] 概率。【F:ai_models/model_mla.py†L79-L143】【F:ai_models/model_mla.py†L188-L194】
+- **参数规模**：针对随仓库提供的 `d=5` 软读出样例（稳定子数 24、特征通道 3），默认隐藏维度 256、12 层、8 头的 AlphaQubit 解码器共有 8,242,177 个可训练参数。【354d2a†L1-L27】
+- **训练样本**：示例数据集 `simulated_data/samples_surface_code_bX_d5_r01_center_5_5.npz` 含 20,000 条样本，形状 `(20000, 1, 24, 3)`；批量预训练脚本 `make_all_pretraining_noise.py` 的默认配置会合成约 $8.5\times10^6$ 条离散综合样本与 4.0M 次 soft shots。【96f910†L1-L8】【F:README.md†L102-L103】
+
 ## 安装
 
 ```bash

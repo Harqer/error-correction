@@ -18,6 +18,7 @@ FALLBACK_DATA_ROOTS: Sequence[Path] = (
 DECODE_SCRIPT = Path("ai_models/decode.py")
 MODEL_SEARCH_DIRS: Sequence[Path] = (
     Path("."),
+    Path("finetuned_models"),
     Path("ai_models/checkpoints"),
     Path("ai_models/models"),
     Path("checkpoints"),

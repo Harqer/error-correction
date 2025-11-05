@@ -14,9 +14,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-root", type=str, required=True, help="Path to experiment subfolders")
     parser.add_argument(
-    "--model-dir", type=str, default=os.getcwd(),
-    help="Directory where alphaqubit_*.pth models live"
-)
+        "--model-dir",
+        type=str,
+        default=os.path.join(os.getcwd(), "finetuned_models"),
+        help="Directory where alphaqubit_*.pth models live",
+    )
 
     return parser.parse_args()
     

@@ -4,6 +4,7 @@ import argparse
 import math
 import gc
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -29,7 +30,13 @@ def parse_args():
     p.add_argument("--train-samples", "-t", type=int, default=19880, help="Max # training shots")
     p.add_argument("--valid-samples", "-v", type=int, default=5120, help="Max # validation shots")
     p.add_argument("--patience", "-p", type=int, default=5, help="Early‑stopping patience (epochs)")
-    p.add_argument("--model_path", "-m",required=True, help="Specify the path of the model to load and save")
+    p.add_argument(
+        "--model_path",
+        "-m",
+        type=Path,
+        required=True,
+        help="Specify the path of the model to load and save",
+    )
     p.add_argument("--npu", action="store_true", help="Use available NPUs for training")
     return p.parse_args()
 
@@ -110,6 +117,9 @@ def train_on_folder(folder: str, args, device):
     print(f"\n=== Fine‑tuning on {folder} ===")
     ds = SingleFolderDataset(folder)
 
+    model_path: Path = args.model_path
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+
     # limit samples if requested
     train_n = min(args.train_samples, len(ds))
     valid_n = min(args.valid_samples, len(ds) - train_n)
@@ -141,12 +151,12 @@ def train_on_folder(folder: str, args, device):
         print(f"Using {torch.cuda.device_count()} GPUs!")
         model = nn.DataParallel(model)
 
-    if os.path.exists(args.model_path):
+    if model_path.exists():
         try:
-            model.load_state_dict(torch.load(args.model_path, map_location="cpu"), strict=False)
-            print(f"Loaded base weights from {args.model_path}")
+            model.load_state_dict(torch.load(model_path, map_location="cpu"), strict=False)
+            print(f"Loaded base weights from {model_path}")
         except Exception as e:
-            print(f"[WARN] Could not load {args.model_path}: {e}")
+            print(f"[WARN] Could not load {model_path}: {e}")
 
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, steps_per_epoch=len(train_loader), epochs=args.epochs)
@@ -176,8 +186,8 @@ def train_on_folder(folder: str, args, device):
         print(f"Epoch {ep}: train {running/len(train_loader):.4f} | val {v_loss:.4f}")
         if v_loss < best_val:
             best_val = v_loss; patience_cnt = 0
-            torch.save(model.state_dict(), f"alphaqubit_{os.path.basename(folder)}.pth")
-            print("    ↳ saved best model for this dataset")
+            torch.save(model.state_dict(), model_path)
+            print(f"    ↳ saved best model for this dataset to {model_path}")
         else:
             patience_cnt += 1
             if patience_cnt >= args.patience:
@@ -185,7 +195,7 @@ def train_on_folder(folder: str, args, device):
                 break
 
     # test accuracy
-    best_path = f"alphaqubit_{os.path.basename(folder)}.pth"
+    best_path = model_path
     model.load_state_dict(torch.load(best_path, map_location=device))
     model.eval(); correct = total = 0
     with torch.no_grad():
@@ -204,13 +214,13 @@ def train_on_folder(folder: str, args, device):
 
 def main():
     args = parse_args()
-            if args.npu:
-            try:
-                import torch_npu  # patches torch to add NPU support
-            except ImportError:
-                print("Warning: torch_npu package is not installed; NPU support may be unavailable.")
+    if args.npu:
+        try:
+            import torch_npu  # patches torch to add NPU support
+        except ImportError:
+            print("Warning: torch_npu package is not installed; NPU support may be unavailable.")
 
-     if args.npu:
+    if args.npu:
         if hasattr(torch, "npu") and torch.npu.is_available():
             device = torch.device("npu")
         else:

@@ -173,12 +173,12 @@ python run_decode_all.py --model ai_models/models/
 ```
 
 - `--model` 支持传入单个文件、目录或留空（若仅检测到一个模型则自动使用）。
-- 当仅提供文件名时，脚本会依次在仓库根目录、`ai_models/checkpoints/`、`ai_models/models/`、`checkpoints/` 与 `models/` 中搜索。
+- 当仅提供文件名时，脚本会依次在仓库根目录、`finetuned_models/`、`ai_models/checkpoints/`、`ai_models/models/`、`checkpoints/` 与 `models/` 中搜索。
 - 默认遍历 `output/`，可通过 `--data-root` 或通配符（如 `"simulated_data/*.npz"`）指定其它数据源。
 - `--predictions-dir` 保存逐次测量概率，`--skip-existing` 跳过已生成指标，`--dry-run` 仅打印执行计划。
 - 若未生成综合数据，脚本会提示未找到解码目标。请使用前述数据生成脚本准备独立采样的测试集，以可靠评估泛化性能。
 
-批量脚本同样适用于微调后模型：`ai_models/fine_tune.py` 与 `run_fine_tune_all.py` 会在仓库根目录生成 `alphaqubit_<folder>.pth`，也会被自动发现。
+批量脚本同样适用于微调后模型：`ai_models/fine_tune.py` 与 `run_fine_tune_all.py` 会在 `finetuned_models/` 目录生成 `alphaqubit_<folder>.pth`，也会被自动发现。
 
 所有批量解码结果默认写入 `results/`，若传入目录则为每个模型创建子目录（例如 `results/alphaqubit_dem/`），同时可通过 `--predictions-dir` 输出 `*_probs.npy`。
 
@@ -187,11 +187,11 @@ python run_decode_all.py --model ai_models/models/
 `plot_alphaquibit_results.py` 可以对经过微调的实验文件夹计算 LER 并绘制柱状图：
 
 ```bash
-python plot_alphaquibit_results.py --data-root ~/work/google_qec3v5_experiment_data/sycamore_runs --model-dir .
+python plot_alphaquibit_results.py --data-root ~/work/google_qec3v5_experiment_data/sycamore_runs --model-dir finetuned_models
 ```
 
 - `--data-root`：包含多个实验子目录（每个子目录需含 `detection_events.b8`、`obs_flips_actual.01` 等文件）。
-- `--model-dir`：对应的 `alphaqubit_<folder>.pth` 模型所在目录，默认为当前路径。
+- `--model-dir`：对应的 `alphaqubit_<folder>.pth` 模型所在目录，默认为 `finetuned_models/`。
 
 脚本会读取各子目录、按文件名解析轮数 `rXX`，再载入同名权重计算逻辑错误率，并绘制汇总图。
 

@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Tuple
@@ -187,6 +188,13 @@ def infer_basis_from_name(path: Path) -> Optional[int]:
         return 0
     if any(tag in name for tag in ("_bz_", "-bz-", "_basisz", "_z_basis")):
         return 1
+
+    tokens = [token for token in re.split(r"[^a-z0-9]+", name) if token]
+    for token in tokens:
+        if token in {"bx", "x", "basisx", "xbasis"}:
+            return 0
+        if token in {"bz", "z", "basisz", "zbasis"}:
+            return 1
     return None
 
 

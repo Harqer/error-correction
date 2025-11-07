@@ -159,21 +159,21 @@ python make_all_pretraining_noise.py --out-dir pretrain_data
 
 ```bash
 python ai_models/decode.py \
-  --model alphaqubit_model.pth \
+  --model finetuned_models/alphaqubit_sycamore_runs.pth \
   --data output/dem_syndromes_z_20240229_101530.npy
 ```
 
-结果写入 `results/`。如需自定义目录，可使用 `--results-dir`。
+结果写入 `results/`。如需自定义目录，可使用 `--results-dir`。示例命令默认假设权重来自仓库根目录下的 `finetuned_models/` 文件夹——`ai_models/fine_tune.py` 与批量脚本 `run_fine_tune_all.py` 会在该目录生成面向具体实验微调过的 `alphaqubit_<folder>.pth` 权重，解码阶段推荐直接使用这些模型。
 
 #### 批量解码
 
 ```bash
-python run_decode_all.py --model ai_models/models/surface_code_bX_d5_r01_center_5_5.pth
-python run_decode_all.py --model ai_models/models/
+python run_decode_all.py --model finetuned_models/
+python run_decode_all.py --model finetuned_models/alphaqubit_sycamore_runs.pth
 ```
 
 - `--model` 支持传入单个文件、目录或留空（若仅检测到一个模型则自动使用）。
-- 当仅提供文件名时，脚本会依次在仓库根目录、`finetuned_models/`、`ai_models/checkpoints/`、`ai_models/models/`、`checkpoints/` 与 `models/` 中搜索。
+- 当仅提供文件名时，脚本会优先在仓库根目录下的 `finetuned_models/` 目录查找微调权重，随后再依次检查 `ai_models/checkpoints/`、`ai_models/models/`、`checkpoints/` 与 `models/` 等位置。
 - 默认遍历 `output/`，可通过 `--data-root` 或通配符（如 `"simulated_data/*.npz"`）指定其它数据源。
 - `--predictions-dir` 保存逐次测量概率，`--skip-existing` 跳过已生成指标，`--dry-run` 仅打印执行计划。
 - 若未生成综合数据，脚本会提示未找到解码目标。请使用前述数据生成脚本准备独立采样的测试集，以可靠评估泛化性能。

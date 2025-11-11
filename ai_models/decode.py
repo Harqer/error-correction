@@ -22,7 +22,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Tuple
@@ -79,12 +81,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data", type=Path, required=True, help="Syndrome data (.npz/.npy) to decode")
     parser.add_argument("--basis", type=str, default=None, help="Override measurement basis: 'x' or 'z'")
     parser.add_argument("--batch-size", type=int, default=512, help="Mini-batch size for decoding")
-    parser.add_argument("--device", type=str, default=None, help="Torch device to run on (default: auto)" )
+    parser.add_argument("--device", type=str, default=None, help="Torch device to run on (default: auto)")
     parser.add_argument("--hidden-dim", type=int, default=256, help="Hidden width of the decoder (must match training)")
     parser.add_argument("--heads", type=int, default=8, help="Number of attention heads (must match training)")
     parser.add_argument("--layers", type=int, default=12, help="Number of transformer layers (must match training)")
     parser.add_argument("--output", type=Path, default=None, help="Where to store aggregated metrics (JSON)")
     parser.add_argument("--predictions", type=Path, default=None, help="Optional path to save per-shot probabilities (.npy)")
+    parser.add_argument(
+        "--cudaq",
+        action="store_true",
+        help="Enable CUDA-Q execution so inference can be dispatched to a quantum backend via NVQLink",
+    )
+    parser.add_argument(
+        "--cudaq-target",
+        type=str,
+        default=None,
+        help="Optional CUDA-Q target name (defaults to NVQLink-enabled target when --cudaq is set)",
+    )
     return parser.parse_args()
 
 
@@ -318,6 +331,58 @@ def load_model(
     return model
 
 
+def configure_cudaq(target: Optional[str]) -> str:
+    """Initialise CUDA-Q with the requested target and NVQLink support."""
+
+    try:
+        import cudaq
+    except ImportError as exc:  # pragma: no cover - depends on optional runtime
+        raise RuntimeError(
+            "CUDA-Q support requested via --cudaq, but the 'cudaq' package is not installed."
+        ) from exc
+
+    resolved_target = target or "nvq-link"
+    try:
+        cudaq.set_target(resolved_target)
+    except Exception as exc:  # pragma: no cover - depends on external runtime
+        raise RuntimeError(f"Failed to configure CUDA-Q target '{resolved_target}'") from exc
+
+    if not _enable_nvqlink(cudaq):
+        warnings.warn(
+            "CUDA-Q runtime does not expose an NVQLink enablement hook; proceeding without explicit activation.",
+            RuntimeWarning,
+        )
+
+    return resolved_target
+
+
+def _enable_nvqlink(cudaq_module) -> bool:
+    """Attempt to enable NVQLink within a CUDA-Q runtime module."""
+
+    # Known entry points may vary between CUDA-Q versions; try a few options.
+    candidates = (
+        getattr(cudaq_module, "enable_nvqlink", None),
+        getattr(cudaq_module, "enableNVQLink", None),
+    )
+    for fn in candidates:
+        if callable(fn):
+            fn()
+            return True
+
+    runtime = getattr(cudaq_module, "runtime", None)
+    if runtime is not None:
+        for name in ("enable_nvqlink", "enableNVQLink"):
+            fn = getattr(runtime, name, None)
+            if callable(fn):
+                fn()
+                return True
+
+    # As a last resort, set a well-named environment toggle in case the runtime
+    # inspects it on start-up.
+    os.environ.setdefault("CUDAQ_ENABLE_NVQLINK", "1")
+    return False
+
+
 def _maybe_patch_feature_projections(state: dict, expected_features: int) -> Optional[dict]:
     """Back-fill missing ``embedder.feature_projs`` weights when possible."""
 
@@ -380,6 +445,12 @@ def main() -> None:
     basis_vector = infer_basis(args.basis, loaded.basis, args.data, num_samples)
     inputs, final_mask, grid_size = prepare_inputs(loaded.syndromes, basis_vector)
 
+    cudaq_target = None
+    if args.cudaq:
+        cudaq_target = configure_cudaq(args.cudaq_target)
+        if args.device is None:
+            args.device = "cuda"
+
     device = select_device(args.device)
 
     dataset = InferenceDataset(inputs, basis_vector, final_mask)
@@ -439,6 +510,7 @@ def main() -> None:
         "rounds": int(R),
         "stabilizers": int(S),
         "features": int(F),
+        **({"cudaq_target": cudaq_target} if cudaq_target is not None else {}),
         **metrics,
     }
 

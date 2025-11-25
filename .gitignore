@@ -6,3 +6,8 @@ ai_models/platform-services-python-sdk/
 dist/
 build/
 *.egg-info/
+
+# Kaggle credentials
+.kaggle/kaggle.json
+# Kaggle kernel/output
+/kaggle_kernel/output

@@ -1,0 +1,14 @@
+{
+  "id": "harqer/alphaqubit-pretrain-kernel",
+  "title": "AlphaQubit: pretrain smoke on Kaggle",
+  "code_file": "run_train.sh",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [
+    "harqer/alphaqubit-pretrain-small"
+  ],
+  "kernel_sources": []
+}

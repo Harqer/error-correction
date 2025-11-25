@@ -1,4 +1,4 @@
-# AlphaQubit：量子纠错模拟与机器学习解码工具包
+# Error Correction
 
 ## 概述
 

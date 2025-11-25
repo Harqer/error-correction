@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+.ipynb_checkpoints/
+*.ipynb
+ai_models/platform-services-python-sdk/
+dist/
+build/
+*.egg-info/

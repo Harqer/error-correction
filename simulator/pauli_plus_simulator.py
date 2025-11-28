@@ -254,7 +254,8 @@ class PauliPlusSimulator:
             # Inject exact 2‑qubit Pauli channel from GPT of two‑qutrit CZ noise
             add_pauli_ch2(a, b, cz_probs16)
 
-        # Flatten the circuit to handle REPEAT blocks
+        # Flatten the circuit to handle REPEAT blocks which contain nested
+        # instructions that must be expanded for proper iteration.
         for inst in self.circuit.flattened():
             name = inst.name
             targs = inst.targets_copy()

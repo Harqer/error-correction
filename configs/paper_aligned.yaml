@@ -21,7 +21,8 @@ p_reset:   1.5e-3
 # Heating / DQLR (handled by paper implementation)
 p_heat_01: 0.0
 p_heat_12: 2.5e-4
-# dqlr_matrix can be set if the implementation expects a matrix; use identity matrix as default
+# DQLR (Dynamic Quantum Leakage Reduction) reset imperfection matrix.
+# Identity matrix means perfect reset with no population transfer between levels.
 dqlr_matrix: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
 
 # CZ-related correlated errors and leakage

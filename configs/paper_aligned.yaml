@@ -4,6 +4,10 @@
 # The adapter delegates to the canonical implementation included in the repo.
 #
 # Cycle timing
+# Surface code parameters
+distance: 3
+rounds: 25
+
 cycle_ns: 1076.0          # surface code cycle time (ns)
 
 # Single-qubit decoherence (applied across 1Q gates / idles)
@@ -17,8 +21,8 @@ p_reset:   1.5e-3
 # Heating / DQLR (handled by paper implementation)
 p_heat_01: 0.0
 p_heat_12: 2.5e-4
-# dqlr_matrix can be set if the implementation expects a matrix; leave null to use defaults
-dqlr_matrix: null
+# dqlr_matrix can be set if the implementation expects a matrix; use identity matrix as default
+dqlr_matrix: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
 
 # CZ-related correlated errors and leakage
 p_cz_crosstalk_ZZ: 5.5e-4

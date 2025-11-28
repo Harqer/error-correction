@@ -7,6 +7,9 @@ dist/
 build/
 *.egg-info/
 
+# Generated output data
+output/
+
 # Kaggle credentials
 .kaggle/kaggle.json
 # Kaggle kernel/output

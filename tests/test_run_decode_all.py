@@ -12,7 +12,7 @@ _MODULE = util.module_from_spec(SPEC)
 SPEC.loader.exec_module(_MODULE)
 
 resolve_targets = _MODULE.resolve_targets
-resolve_model_path = _MODULE.resolve_model_path
+resolve_model_paths = _MODULE.resolve_model_paths
 
 
 def make_args(**overrides):
@@ -55,30 +55,30 @@ def test_directory_target_respects_recursive_flag(tmp_path):
     assert resolve_targets(args_recursive) == [file_in_nested.resolve()]
 
 
-def test_resolve_model_path_prefers_explicit(tmp_path, monkeypatch):
+def test_resolve_model_paths_prefers_explicit(tmp_path, monkeypatch):
     checkpoint = tmp_path / "alphaqubit.pth"
     checkpoint.write_bytes(b"model")
 
     monkeypatch.setattr(_MODULE, "MODEL_SEARCH_DIRS", (tmp_path,))
 
-    resolved = resolve_model_path(checkpoint)
-    assert resolved == checkpoint.resolve()
+    resolved = resolve_model_paths(checkpoint)
+    assert resolved == [checkpoint.resolve()]
 
 
-def test_resolve_model_path_auto_discovers_single(tmp_path, monkeypatch, capsys):
+def test_resolve_model_paths_auto_discovers_single(tmp_path, monkeypatch, capsys):
     checkpoint = tmp_path / "auto.pth"
     checkpoint.write_bytes(b"model")
 
     monkeypatch.setattr(_MODULE, "MODEL_SEARCH_DIRS", (tmp_path,))
 
-    resolved = resolve_model_path(None)
+    resolved = resolve_model_paths(None)
     captured = capsys.readouterr()
 
-    assert resolved == checkpoint.resolve()
+    assert resolved == [checkpoint.resolve()]
     assert "auto-discovered" in captured.out
 
 
-def test_resolve_model_path_requires_disambiguation(tmp_path, monkeypatch):
+def test_resolve_model_paths_requires_disambiguation(tmp_path, monkeypatch):
     first = tmp_path / "first.pth"
     second = tmp_path / "second.pth"
     first.write_bytes(b"a")
@@ -87,7 +87,7 @@ def test_resolve_model_path_requires_disambiguation(tmp_path, monkeypatch):
     monkeypatch.setattr(_MODULE, "MODEL_SEARCH_DIRS", (tmp_path,))
 
     with pytest.raises(FileNotFoundError) as excinfo:
-        resolve_model_path(None)
+        resolve_model_paths(None)
 
     message = str(excinfo.value)
     assert "Multiple model checkpoints" in message

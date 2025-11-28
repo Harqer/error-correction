@@ -7,6 +7,17 @@ dist/
 build/
 *.egg-info/
 
+# Generated output data
+output/
+
+# Trained models
+ai_models/models/
+*.pth
+finetuned_models/
+
+# Results
+results/
+
 # Kaggle credentials
 .kaggle/kaggle.json
 # Kaggle kernel/output

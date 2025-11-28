@@ -34,7 +34,8 @@ def main(model_type: str, num_samples: int, basis: str):
         syndromes, logicals = sampler.sample(num_samples, separate_observables=True)
     elif model_type == "paper_aligned":
         # The PauliPlus simulator in paper-aligned mode maps config 1:1 to the paper’s physical noise
-        sim = PauliPlusSimulator(config, basis, mode="paper_aligned")
+        sim = PauliPlusSimulator(config, basis)
+        sim.apply_paper_aligned_noise(config)
         sampler = sim.circuit.compile_detector_sampler()
         syndromes, logicals = sampler.sample(num_samples, separate_observables=True)
     else:
